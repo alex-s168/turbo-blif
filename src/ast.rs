@@ -80,7 +80,23 @@ impl FSMConsumer for FSM {
 }
 
 #[derive(Debug, Clone, Hash, PartialEq, PartialOrd)]
-pub enum ModelCmd {
+pub enum CellAttrAst {
+    /// non-standard; emitted by: yosys
+    CellName(String),
+
+    /// non-standard; possibly emitted by: yosys
+    ///
+    /// example: Attr { key: "src", val: "\"some/file.v:320.20-320.28\"" }
+    Attr { key: Str<8>, val: String },
+
+    /// non-standard; emitted by: yosys
+    ///
+    /// example: Param { key: "A_WIDTH", val: "00000000000000000000000000000001" }
+    Param { key: Str<16>, val: String },
+}
+
+#[derive(Debug, Clone, Hash, PartialEq, PartialOrd)]
+pub enum ModelCmdKind {
     Gate(Gate),
     FF(FlipFlop),
     LibGate(LibGate),
@@ -90,6 +106,25 @@ pub enum ModelCmd {
         name: Str<32>,
         map: Vec<(Str<16>, Str<16>)>,
     },
+    Connect {
+        from: Str<16>,
+        to: Str<16>,
+    },
+}
+
+#[derive(Debug, Clone, Hash, PartialEq, PartialOrd)]
+pub struct ModelCmd {
+    pub kind: ModelCmdKind,
+    pub attrs: Vec<CellAttrAst>,
+}
+
+impl From<ModelCmdKind> for ModelCmd {
+    fn from(value: ModelCmdKind) -> Self {
+        Self {
+            kind: value,
+            attrs: vec![],
+        }
+    }
 }
 
 #[derive(Debug, Clone, Hash, PartialEq, PartialOrd)]
@@ -106,26 +141,29 @@ impl CommandConsumer for Model {
     }
 
     fn gate_done(&mut self, gate: Self::Gate) {
-        self.commands.push(ModelCmd::Gate(gate));
+        self.commands.push(ModelCmdKind::Gate(gate).into());
     }
 
     fn ff(&mut self, ff: FlipFlop) {
-        self.commands.push(ModelCmd::FF(ff));
+        self.commands.push(ModelCmdKind::FF(ff).into());
     }
 
     fn lib_gate(&mut self, gate: LibGate) {
-        self.commands.push(ModelCmd::LibGate(gate));
+        self.commands.push(ModelCmdKind::LibGate(gate).into());
     }
 
     fn lib_ff(&mut self, ff: LibFlipFlop) {
-        self.commands.push(ModelCmd::LibFF(ff));
+        self.commands.push(ModelCmdKind::LibFF(ff).into());
     }
 
     fn sub_model(&mut self, model: &str, map: Vec<(Str<16>, Str<16>)>) {
-        self.commands.push(ModelCmd::SubModel {
-            name: model.into(),
-            map,
-        });
+        self.commands.push(
+            ModelCmdKind::SubModel {
+                name: model.into(),
+                map,
+            }
+            .into(),
+        );
     }
 
     type FSM = FSM;
@@ -150,7 +188,31 @@ impl CommandConsumer for Model {
         let mut fsm = fsm;
         fsm.physical_latch_order = physical_latch_order;
         fsm.state_assignments = state_assignments;
-        self.commands.push(ModelCmd::FSM(fsm));
+        self.commands.push(ModelCmdKind::FSM(fsm).into());
+    }
+
+    fn attr(&mut self, attr: CellAttr) {
+        self.commands.last_mut().unwrap().attrs.push(match attr {
+            CellAttr::CellName(n) => CellAttrAst::CellName(n.into()),
+            CellAttr::Attr { key, val } => CellAttrAst::Attr {
+                key: key.into(),
+                val: val.into(),
+            },
+            CellAttr::Param { key, val } => CellAttrAst::Param {
+                key: key.into(),
+                val: val.into(),
+            },
+        });
+    }
+
+    fn connect(&mut self, from: &str, to: &str) {
+        self.commands.push(
+            ModelCmdKind::Connect {
+                from: from.into(),
+                to: to.into(),
+            }
+            .into(),
+        )
     }
 }
 

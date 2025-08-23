@@ -24,17 +24,20 @@ fn simple_named() {
                 outputs: Some(vec!["c".into()]),
                 clocks: vec![],
             },
-            commands: vec![ModelCmd::Gate(Gate {
-                meta: GateMeta {
-                    inputs: vec!["a".into(), "b".into(),],
-                    output: "c".into(),
-                    external_dc: false,
-                },
-                lut: LUT(vec![(
-                    [Tristate::True, Tristate::True].into_iter().collect(),
-                    true
-                )]),
-            })],
+            commands: vec![
+                ModelCmdKind::Gate(Gate {
+                    meta: GateMeta {
+                        inputs: vec!["a".into(), "b".into(),],
+                        output: "c".into(),
+                        external_dc: false,
+                    },
+                    lut: LUT(vec![(
+                        [Tristate::True, Tristate::True].into_iter().collect(),
+                        true
+                    )]),
+                })
+                .into()
+            ],
         })],
     );
 }
@@ -60,17 +63,20 @@ fn simple_unnamed() {
                 outputs: Some(vec!["c".into()]),
                 clocks: vec![],
             },
-            commands: vec![ModelCmd::Gate(Gate {
-                meta: GateMeta {
-                    inputs: vec!["a".into(), "b".into(),],
-                    output: "c".into(),
-                    external_dc: false,
-                },
-                lut: LUT(vec![(
-                    [Tristate::True, Tristate::True].into_iter().collect(),
-                    true
-                )]),
-            })],
+            commands: vec![
+                ModelCmdKind::Gate(Gate {
+                    meta: GateMeta {
+                        inputs: vec!["a".into(), "b".into(),],
+                        output: "c".into(),
+                        external_dc: false,
+                    },
+                    lut: LUT(vec![(
+                        [Tristate::True, Tristate::True].into_iter().collect(),
+                        true
+                    )]),
+                })
+                .into()
+            ],
         })],
     );
 }
@@ -95,17 +101,20 @@ c
                 outputs: None,
                 clocks: vec![],
             },
-            commands: vec![ModelCmd::Gate(Gate {
-                meta: GateMeta {
-                    inputs: vec!["a".into(), "b".into(),],
-                    output: "c".into(),
-                    external_dc: false,
-                },
-                lut: LUT(vec![(
-                    [Tristate::True, Tristate::True].into_iter().collect(),
-                    true
-                )]),
-            })],
+            commands: vec![
+                ModelCmdKind::Gate(Gate {
+                    meta: GateMeta {
+                        inputs: vec!["a".into(), "b".into(),],
+                        output: "c".into(),
+                        external_dc: false,
+                    },
+                    lut: LUT(vec![(
+                        [Tristate::True, Tristate::True].into_iter().collect(),
+                        true
+                    )]),
+                })
+                .into()
+            ],
         })],
     );
 }
@@ -131,17 +140,20 @@ c
                 outputs: None,
                 clocks: vec![],
             },
-            commands: vec![ModelCmd::Gate(Gate {
-                meta: GateMeta {
-                    inputs: vec!["a".into(), "b".into(),],
-                    output: "c".into(),
-                    external_dc: true,
-                },
-                lut: LUT(vec![(
-                    [Tristate::True, Tristate::True].into_iter().collect(),
-                    true
-                )]),
-            })],
+            commands: vec![
+                ModelCmdKind::Gate(Gate {
+                    meta: GateMeta {
+                        inputs: vec!["a".into(), "b".into(),],
+                        output: "c".into(),
+                        external_dc: true,
+                    },
+                    lut: LUT(vec![(
+                        [Tristate::True, Tristate::True].into_iter().collect(),
+                        true
+                    )]),
+                })
+                .into()
+            ],
         })],
     );
 }
@@ -167,48 +179,51 @@ fn lut() {
                 outputs: None,
                 clocks: vec![],
             },
-            commands: vec![ModelCmd::Gate(Gate {
-                meta: GateMeta {
-                    inputs: vec!["v3".into(), "v6".into(), "j".into(), "u78".into()],
-                    output: "v13.15".into(),
-                    external_dc: false,
-                },
-                lut: LUT(vec![
-                    (
-                        [
-                            Tristate::True,
-                            Tristate::Ignored,
-                            Tristate::Ignored,
-                            Tristate::False
-                        ]
-                        .into_iter()
-                        .collect(),
-                        true
-                    ),
-                    (
-                        [
-                            Tristate::Ignored,
-                            Tristate::True,
-                            Tristate::Ignored,
-                            Tristate::True
-                        ]
-                        .into_iter()
-                        .collect(),
-                        true
-                    ),
-                    (
-                        [
-                            Tristate::False,
-                            Tristate::Ignored,
-                            Tristate::True,
-                            Tristate::True
-                        ]
-                        .into_iter()
-                        .collect(),
-                        true
-                    )
-                ]),
-            })],
+            commands: vec![
+                ModelCmdKind::Gate(Gate {
+                    meta: GateMeta {
+                        inputs: vec!["v3".into(), "v6".into(), "j".into(), "u78".into()],
+                        output: "v13.15".into(),
+                        external_dc: false,
+                    },
+                    lut: LUT(vec![
+                        (
+                            [
+                                Tristate::True,
+                                Tristate::Ignored,
+                                Tristate::Ignored,
+                                Tristate::False
+                            ]
+                            .into_iter()
+                            .collect(),
+                            true
+                        ),
+                        (
+                            [
+                                Tristate::Ignored,
+                                Tristate::True,
+                                Tristate::Ignored,
+                                Tristate::True
+                            ]
+                            .into_iter()
+                            .collect(),
+                            true
+                        ),
+                        (
+                            [
+                                Tristate::False,
+                                Tristate::Ignored,
+                                Tristate::True,
+                                Tristate::True
+                            ]
+                            .into_iter()
+                            .collect(),
+                            true
+                        )
+                    ]),
+                })
+                .into()
+            ],
         })],
     );
 }
@@ -248,15 +263,16 @@ fn submod() {
                     clocks: vec![]
                 },
                 commands: vec![
-                    ModelCmd::SubModel {
+                    ModelCmdKind::SubModel {
                         name: "b".into(),
                         map: vec![
                             ("x".into(), "x".into()),
                             ("y".into(), "y".into()),
                             ("j".into(), "j".into())
                         ]
-                    },
-                    ModelCmd::Gate(Gate {
+                    }
+                    .into(),
+                    ModelCmdKind::Gate(Gate {
                         meta: GateMeta {
                             inputs: vec!["x".into()],
                             output: "j".into(),
@@ -264,6 +280,7 @@ fn submod() {
                         },
                         lut: LUT(vec![([Tristate::True].into_iter().collect(), true)])
                     })
+                    .into()
                 ]
             }),
             BlifEntry::Model(Model {
@@ -273,17 +290,20 @@ fn submod() {
                     outputs: Some(vec!["j".into()]),
                     clocks: vec![]
                 },
-                commands: vec![ModelCmd::Gate(Gate {
-                    meta: GateMeta {
-                        inputs: vec!["x".into(), "y".into()],
-                        output: "j".into(),
-                        external_dc: false
-                    },
-                    lut: LUT(vec![(
-                        [Tristate::True, Tristate::True].into_iter().collect(),
-                        true
-                    )])
-                })]
+                commands: vec![
+                    ModelCmdKind::Gate(Gate {
+                        meta: GateMeta {
+                            inputs: vec!["x".into(), "y".into()],
+                            output: "j".into(),
+                            external_dc: false
+                        },
+                        lut: LUT(vec![(
+                            [Tristate::True, Tristate::True].into_iter().collect(),
+                            true
+                        )])
+                    })
+                    .into()
+                ]
             })
         ]
     );
@@ -434,13 +454,53 @@ fn kiss_fsm2() {
 }
 
 #[test]
-fn tech_clock_cst() {
+fn clock_cst() {
     let ast = parse_str_blif_to_ast(
         "top.blif",
         r#"
 .clock clock1 clock2
 .clock_event 50.0 r’clock1
 .clock_event 50.0 (f’clock2 2.0 5.0)
+"#,
+    )
+    .unwrap();
+
+    // TODO: assert_eq
+}
+
+#[test]
+fn yosys_attrs() {
+    let ast = parse_str_blif_to_ast(
+        "top.blif",
+        r#"
+
+.model MAC
+.inputs clock reset io_rmii_r_RXD[0] io_rmii_r_RXD[1] io_rmii_r_RXER io_rmii_r_CRS_DV io_rmii_clk io_is10mbits io_full_duplex xmit_io_transmit xmit_io_byte[0] xmit_io_byte[1] xmit_io_byte[2] xmit_io_byte[3] xmit_io_byte[4] xmit_io_byte[5] xmit_io_byte[6] xmit_io_byte[7]
+.outputs io_rmii_t_TXD[0] io_rmii_t_TXD[1] io_rmii_t_TXEN xmit_io_byte_sent recv_io_frame_start recv_io_abort_frame recv_io_valid_byte recv_io_byte[0] recv_io_byte[1] recv_io_byte[2] recv_io_byte[3] recv_io_byte[4] recv_io_byte[5] recv_io_byte[6] recv_io_byte[7] recv_io_info_carrier_lost_during_packet
+.names $false
+.names $true
+1
+.names $undef
+
+.subckt $add A[0]=xmit_preamble_counter[0] A[1]=xmit_preamble_counter[1] A[2]=xmit_preamble_counter[2] B[0]=$true B[1]=$false B[2]=$false Y[0]=$add$build/out.v:213$277_Y[0] Y[1]=$add$build/out.v:213$277_Y[1] Y[2]=$add$build/out.v:213$277_Y[2]
+.cname $add$build/out.v:213$277
+.attr src "build/out.v:213.31-213.59"
+.param A_SIGNED 00000000000000000000000000000000
+.param A_WIDTH 00000000000000000000000000000011
+.param B_SIGNED 00000000000000000000000000000000
+.param B_WIDTH 00000000000000000000000000000011
+.param Y_WIDTH 00000000000000000000000000000011
+
+.subckt $and A=$not$build/out.v:170$224_Y B=$eq$build/out.v:170$225_Y Y=$and$build/out.v:170$226_Y
+.cname $and$build/out.v:170$226
+.attr src "build/out.v:170.31-170.103"
+.param A_SIGNED 00000000000000000000000000000000
+.param A_WIDTH 00000000000000000000000000000001
+.param B_SIGNED 00000000000000000000000000000000
+.param B_WIDTH 00000000000000000000000000000001
+.param Y_WIDTH 00000000000000000000000000000001
+
+
 "#,
     )
     .unwrap();

@@ -63,6 +63,22 @@ pub trait FSMConsumer {
     fn add_transition(&mut self, transition: FSMTransition);
 }
 
+#[derive(Debug, Clone, Hash, PartialEq, PartialOrd)]
+pub enum CellAttr<'a> {
+    /// non-standard; emitted by: yosys
+    CellName(&'a str),
+
+    /// non-standard; possibly emitted by: yosys
+    ///
+    /// example: Attr { key: "src", val: "\"some/file.v:320.20-320.28\"" }
+    Attr { key: &'a str, val: &'a str },
+
+    /// non-standard; emitted by: yosys
+    ///
+    /// example: Param { key: "A_WIDTH", val: "00000000000000000000000000000001" }
+    Param { key: &'a str, val: &'a str },
+}
+
 pub trait CommandConsumer {
     type Gate: GateLutConsumer;
     type FSM: FSMConsumer;
@@ -84,6 +100,12 @@ pub trait CommandConsumer {
     /// copies the whole circuit of the referenced model, and maps the ins/outs/clocks according to
     /// [map]
     fn sub_model(&mut self, model: &str, map: Vec<(Str<16>, Str<16>)>);
+
+    /// attach attr to last gate / fsm / ff / libgate / libff / sub_model
+    fn attr(&mut self, attr: CellAttr);
+
+    /// non-standard
+    fn connect(&mut self, from: &str, to: &str);
 }
 
 #[derive(Debug, Clone, Hash, PartialEq, PartialOrd)]
@@ -404,7 +426,13 @@ fn parse_mod(
                     lines.peek().is_some_and(|x| !x.as_ref().starts_with("."))
                 } {
                     let l = next_stmt(lines)?.unwrap();
-                    let (l, r) = l.as_ref().split_once(' ').ok_or(BlifParserError::Invalid)?;
+                    let l = l.as_ref();
+
+                    let (l, r) = if l.contains(' ') {
+                        l.split_once(' ').unwrap()
+                    } else {
+                        ("", l)
+                    };
 
                     let invs = str_to_tristates(l).map_err(|_| BlifParserError::Invalid)?;
                     let outvs = match r {
@@ -765,7 +793,59 @@ fn parse_mod(
                 );
             }
 
+            ".cname" => {
+                let arg = args.next().ok_or(BlifParserError::MissingArgs)?.into();
+
+                if args.next().is_some() {
+                    Err(BlifParserError::TooManyArgs)?
+                }
+
+                consumer.attr(CellAttr::CellName(arg));
+            }
+
+            ".attr" => {
+                let key = args.next().ok_or(BlifParserError::MissingArgs)?.into();
+
+                let val = args.fold(String::new(), |acc, x| {
+                    let mut acc = acc;
+                    acc.push_str(x);
+                    acc
+                });
+
+                consumer.attr(CellAttr::Attr {
+                    key,
+                    val: val.as_str(),
+                });
+            }
+
+            ".param" => {
+                let key = args.next().ok_or(BlifParserError::MissingArgs)?.into();
+
+                let val = args.fold(String::new(), |acc, x| {
+                    let mut acc = acc;
+                    acc.push_str(x);
+                    acc
+                });
+
+                consumer.attr(CellAttr::Param {
+                    key,
+                    val: val.as_str(),
+                });
+            }
+
+            ".conn" => {
+                let from = args.next().ok_or(BlifParserError::MissingArgs)?.into();
+                let to = args.next().ok_or(BlifParserError::MissingArgs)?.into();
+
+                if args.next().is_some() {
+                    Err(BlifParserError::TooManyArgs)?
+                }
+
+                consumer.connect(from, to);
+            }
+
             // TODO: clock & delay cst
+            // TODO: .blackblox
             _ => Err(BlifParserError::UnknownKw(cmd.to_string()))?,
         };
     }

@@ -1,11 +1,11 @@
 # turbo-blif
 
-low-memory-usage BLIF (berkeley logic interchange format) parser and writer.
+low-memory-usage BLIF (berkeley logic interchange format) parser.
 
 supports:
 - the latest BLIF specification (dated July 28, 1992)
 - all yosys BLIF extensions
-  (supports reading of BLIF files generated with `write_blif -iname -iattr -param -cname -blackbox -attr -conn -icells`)
+  (supports reading of BLIF files generated with `write_blif -iname -iattr -param -cname -blackbox -attr -conn`)
 - KISS state machines (which yosys doesn't even support)
 - clock and delay constraints (yosys just ignores those)
 
