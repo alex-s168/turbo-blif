@@ -59,11 +59,25 @@ pub struct LibFlipFlop {
     pub init: FlipFlopInit,
 }
 
+pub trait FSMConsumer {
+    fn add_transition(&mut self, transition: FSMTransition);
+}
+
 pub trait CommandConsumer {
     type Gate: GateLutConsumer;
+    type FSM: FSMConsumer;
 
     fn gate(&self, gate: GateMeta) -> Self::Gate;
     fn gate_done(&mut self, gate: Self::Gate);
+
+    fn fsm(&self, inputs: usize, outputs: usize, reset_state: Option<&str>) -> Self::FSM;
+    fn fsm_done(
+        &mut self,
+        fsm: Self::FSM,
+        physical_latch_order: Option<Vec<String>>,
+        state_assignments: Option<Vec<(String, SmallVec<[bool; 8]>)>>,
+    );
+
     fn ff(&mut self, ff: FlipFlop);
     fn lib_gate(&mut self, gate: LibGate);
     fn lib_ff(&mut self, ff: LibFlipFlop);
@@ -281,6 +295,24 @@ pub enum FlipFlopInit {
     Unknown,
 }
 
+#[derive(Debug, Clone, Hash, PartialEq, PartialOrd)]
+pub struct FSMTransition<'s> {
+    pub input: SmallVec<[Tristate; 8]>,
+    pub current_state: &'s str,
+    pub next_state: &'s str,
+    pub output: SmallVec<[Tristate; 8]>,
+}
+
+fn str_to_tristates<C: FromIterator<Tristate>>(s: &str) -> Result<C, ()> {
+    s.bytes()
+        .map(|x| {
+            let x = [x];
+            let x = unsafe { str::from_utf8_unchecked(&x) };
+            x.parse()
+        })
+        .collect::<Result<_, _>>()
+}
+
 fn parse_mod(
     name: &str,
     consumer: &mut impl ModelConsumer,
@@ -292,7 +324,7 @@ fn parse_mod(
             let line = next_stmt(lines)?.unwrap();
             let line = line.as_ref();
             let mut args = line.split(' ');
-            let cmd = args.next().ok_or(BlifParserError::Invalid)?;
+            let _cmd = args.next().ok_or(BlifParserError::Invalid)?;
 
             Some(args.map(|x| x.into()).collect())
         } else {
@@ -306,7 +338,7 @@ fn parse_mod(
             let line = next_stmt(lines)?.unwrap();
             let line = line.as_ref();
             let mut args = line.split(' ');
-            let cmd = args.next().ok_or(BlifParserError::Invalid)?;
+            let _cmd = args.next().ok_or(BlifParserError::Invalid)?;
 
             Some(args.map(|x| x.into()).collect())
         } else {
@@ -320,7 +352,7 @@ fn parse_mod(
             let line = next_stmt(lines)?.unwrap();
             let line = line.as_ref();
             let mut args = line.split(' ');
-            let cmd = args.next().ok_or(BlifParserError::Invalid)?;
+            let _cmd = args.next().ok_or(BlifParserError::Invalid)?;
 
             args.map(|x| x.into()).collect()
         } else {
@@ -374,15 +406,7 @@ fn parse_mod(
                     let l = next_stmt(lines)?.unwrap();
                     let (l, r) = l.as_ref().split_once(' ').ok_or(BlifParserError::Invalid)?;
 
-                    let invs = l
-                        .bytes()
-                        .map(|x| {
-                            let x = [x];
-                            let x = unsafe { str::from_utf8_unchecked(&x) };
-                            x.parse()
-                        })
-                        .collect::<Result<_, _>>()
-                        .map_err(|_| BlifParserError::Invalid)?;
+                    let invs = str_to_tristates(l).map_err(|_| BlifParserError::Invalid)?;
                     let outvs = match r {
                         "0" => false,
                         "1" => true,
@@ -529,7 +553,218 @@ fn parse_mod(
                 main_consumer.search(path);
             }
 
-            // TODO: .start_kiss
+            ".start_kiss" => {
+                if args.next().is_some() {
+                    Err(BlifParserError::TooManyArgs)?
+                }
+
+                let num_ins: usize = {
+                    parse_padding(lines);
+                    let line = next_stmt(lines)?.unwrap();
+                    let line = line.as_ref().trim();
+                    let mut args = line.split(' ');
+                    let cmd = args.next().ok_or(BlifParserError::Invalid)?;
+
+                    if cmd != ".i" {
+                        Err(BlifParserError::UnknownKw(cmd.to_string()))?
+                    }
+
+                    let v = args
+                        .next()
+                        .ok_or(BlifParserError::MissingArgs)?
+                        .parse()
+                        .map_err(|_| BlifParserError::Invalid)?;
+
+                    if args.next().is_some() {
+                        Err(BlifParserError::TooManyArgs)?
+                    }
+
+                    v
+                };
+
+                let num_outs: usize = {
+                    parse_padding(lines);
+                    let line = next_stmt(lines)?.unwrap();
+                    let line = line.as_ref().trim();
+                    let mut args = line.split(' ');
+                    let cmd = args.next().ok_or(BlifParserError::Invalid)?;
+
+                    if cmd != ".o" {
+                        Err(BlifParserError::UnknownKw(cmd.to_string()))?
+                    }
+
+                    let v = args
+                        .next()
+                        .ok_or(BlifParserError::MissingArgs)?
+                        .parse()
+                        .map_err(|_| BlifParserError::Invalid)?;
+
+                    if args.next().is_some() {
+                        Err(BlifParserError::TooManyArgs)?
+                    }
+
+                    v
+                };
+
+                let _num_terms: Option<usize> = {
+                    parse_padding(lines);
+                    if is_kw(lines, ".p") {
+                        let line = next_stmt(lines)?.unwrap();
+                        let line = line.as_ref().trim();
+
+                        let mut args = line.split(' ');
+                        let _cmd = args.next().ok_or(BlifParserError::Invalid)?;
+
+                        let v = args
+                            .next()
+                            .ok_or(BlifParserError::MissingArgs)?
+                            .parse()
+                            .map_err(|_| BlifParserError::Invalid)?;
+
+                        if args.next().is_some() {
+                            Err(BlifParserError::TooManyArgs)?
+                        }
+
+                        Some(v)
+                    } else {
+                        None
+                    }
+                };
+
+                let _num_states: Option<usize> = {
+                    parse_padding(lines);
+                    if is_kw(lines, ".s") {
+                        let line = next_stmt(lines)?.unwrap();
+                        let line = line.as_ref().trim();
+
+                        let mut args = line.split(' ');
+                        let _cmd = args.next().ok_or(BlifParserError::Invalid)?;
+
+                        let v = args
+                            .next()
+                            .ok_or(BlifParserError::MissingArgs)?
+                            .parse()
+                            .map_err(|_| BlifParserError::Invalid)?;
+
+                        if args.next().is_some() {
+                            Err(BlifParserError::TooManyArgs)?
+                        }
+
+                        Some(v)
+                    } else {
+                        None
+                    }
+                };
+
+                let reset_state: Option<String> = {
+                    parse_padding(lines);
+                    if is_kw(lines, ".r") {
+                        let line = next_stmt(lines)?.unwrap();
+                        let line = line.as_ref().trim();
+
+                        let mut args = line.split(' ');
+                        let _cmd = args.next().ok_or(BlifParserError::Invalid)?;
+
+                        let v = args.next().ok_or(BlifParserError::MissingArgs)?;
+
+                        if args.next().is_some() {
+                            Err(BlifParserError::TooManyArgs)?
+                        }
+
+                        Some(v.to_string())
+                    } else {
+                        None
+                    }
+                };
+
+                let mut fsm =
+                    consumer.fsm(num_ins, num_outs, reset_state.as_ref().map(|x| x.as_str()));
+
+                while {
+                    parse_padding(lines);
+                    lines.peek().is_some_and(|x| x.as_ref() != ".end_kiss")
+                } {
+                    let line = next_stmt(lines)?.unwrap();
+                    let line = line.as_ref().trim();
+
+                    let mut args = line.split(' ');
+
+                    let input = str_to_tristates(args.next().ok_or(BlifParserError::Invalid)?)
+                        .map_err(|_| BlifParserError::Invalid)?;
+                    let current_state = args.next().ok_or(BlifParserError::Invalid)?.to_string();
+                    let next_state = args.next().ok_or(BlifParserError::Invalid)?.to_string();
+                    let output = str_to_tristates(args.next().ok_or(BlifParserError::Invalid)?)
+                        .map_err(|_| BlifParserError::Invalid)?;
+
+                    fsm.add_transition(FSMTransition {
+                        input,
+                        current_state: current_state.as_str(),
+                        next_state: next_state.as_str(),
+                        output,
+                    });
+                }
+
+                {
+                    parse_padding(lines);
+                    let line = next_stmt(lines)?.ok_or(BlifParserError::UnexpectedEnd)?;
+                    let line = line.as_ref().trim();
+                    if line != ".end_kiss" {
+                        Err(BlifParserError::Invalid)?
+                    }
+                };
+
+                let latch_order: Option<Vec<String>> = {
+                    parse_padding(lines);
+                    if is_kw(lines, ".latch_order") {
+                        let line = next_stmt(lines)?.unwrap();
+                        let line = line.as_ref().trim();
+
+                        let mut args = line.split(' ');
+                        let _cmd = args.next().ok_or(BlifParserError::Invalid)?;
+
+                        Some(args.map(|x| x.to_string()).collect())
+                    } else {
+                        None
+                    }
+                };
+
+                let mut code_mapping = vec![];
+
+                while {
+                    parse_padding(lines);
+                    is_kw(lines, ".code")
+                } {
+                    let line = next_stmt(lines)?.unwrap();
+                    let line = line.as_ref().trim();
+                    let mut args = line.split(' ');
+                    let _cmd = args.next().ok_or(BlifParserError::Invalid)?;
+
+                    let state = args.next().ok_or(BlifParserError::Invalid)?;
+                    let value = args
+                        .next()
+                        .ok_or(BlifParserError::Invalid)?
+                        .chars()
+                        .map(|x| match x {
+                            '0' => Ok(false),
+                            '1' => Ok(true),
+                            _ => Err(BlifParserError::Invalid),
+                        })
+                        .collect::<Result<_, _>>()?;
+
+                    code_mapping.push((state.to_string(), value));
+                }
+
+                consumer.fsm_done(
+                    fsm,
+                    latch_order,
+                    if code_mapping.len() == 0 {
+                        None
+                    } else {
+                        Some(code_mapping)
+                    },
+                );
+            }
+
             // TODO: clock & delay cst
             _ => Err(BlifParserError::UnknownKw(cmd.to_string()))?,
         };
@@ -573,7 +808,7 @@ pub fn parse_blif(
                 }
 
                 ".model" => {
-                    let mod_name = args.next().ok_or(BlifParserError::MissingArgs)?;
+                    let mod_name = args.next().unwrap_or(file_name);
                     if args.next().is_some() {
                         Err(BlifParserError::TooManyArgs)?;
                     }

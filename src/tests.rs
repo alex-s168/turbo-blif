@@ -363,7 +363,7 @@ fn tech_ff() {
 }
 
 #[test]
-fn tech_kiss_fsm() {
+fn kiss_fsm() {
     let ast = parse_str_blif_to_ast(
         "top.blif",
         r#"
@@ -376,7 +376,6 @@ fn tech_kiss_fsm() {
 0 st1 st2 0
 1 st1 st1 0
 0 st2 st0 0
-8
 1 st2 st3 1
 0 st3 st2 0
 1 st3 st1 0
@@ -390,7 +389,7 @@ fn tech_kiss_fsm() {
 }
 
 #[test]
-fn tech_kiss_fsm2() {
+fn kiss_fsm2() {
     let ast = parse_str_blif_to_ast(
         "top.blif",
         r#"

@@ -1,6 +1,6 @@
 # turbo-blif
 
-low-memory-usage BLIF (berkeley logic interchange format) and KISS (finite state-machine description format) parser and writer.
+low-memory-usage BLIF (berkeley logic interchange format) parser and writer.
 
 supports:
 - the latest BLIF specification (dated July 28, 1992)

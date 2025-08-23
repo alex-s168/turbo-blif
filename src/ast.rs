@@ -51,11 +51,41 @@ impl GateLutConsumer for Gate {
 }
 
 #[derive(Debug, Clone, Hash, PartialEq, PartialOrd)]
+pub struct FSMTransitionAST {
+    pub input: SmallVec<[Tristate; 8]>,
+    pub current_state: String,
+    pub next_state: String,
+    pub output: SmallVec<[Tristate; 8]>,
+}
+
+#[derive(Debug, Clone, Hash, PartialEq, PartialOrd)]
+pub struct FSM {
+    pub inputs: usize,
+    pub outputs: usize,
+    pub reset_state: Option<String>,
+    pub states: Vec<FSMTransitionAST>,
+    pub physical_latch_order: Option<Vec<String>>,
+    pub state_assignments: Option<Vec<(String, SmallVec<[bool; 8]>)>>,
+}
+
+impl FSMConsumer for FSM {
+    fn add_transition(&mut self, transition: FSMTransition) {
+        self.states.push(FSMTransitionAST {
+            input: transition.input,
+            current_state: transition.current_state.to_string(),
+            next_state: transition.next_state.to_string(),
+            output: transition.output,
+        });
+    }
+}
+
+#[derive(Debug, Clone, Hash, PartialEq, PartialOrd)]
 pub enum ModelCmd {
     Gate(Gate),
     FF(FlipFlop),
     LibGate(LibGate),
     LibFF(LibFlipFlop),
+    FSM(FSM),
     SubModel {
         name: Str<32>,
         map: Vec<(Str<16>, Str<16>)>,
@@ -96,6 +126,31 @@ impl CommandConsumer for Model {
             name: model.into(),
             map,
         });
+    }
+
+    type FSM = FSM;
+
+    fn fsm(&self, inputs: usize, outputs: usize, reset_state: Option<&str>) -> Self::FSM {
+        FSM {
+            inputs,
+            outputs,
+            reset_state: reset_state.map(|x| x.to_string()),
+            states: vec![],
+            physical_latch_order: None,
+            state_assignments: None,
+        }
+    }
+
+    fn fsm_done(
+        &mut self,
+        fsm: Self::FSM,
+        physical_latch_order: Option<Vec<String>>,
+        state_assignments: Option<Vec<(String, SmallVec<[bool; 8]>)>>,
+    ) {
+        let mut fsm = fsm;
+        fsm.physical_latch_order = physical_latch_order;
+        fsm.state_assignments = state_assignments;
+        self.commands.push(ModelCmd::FSM(fsm));
     }
 }
 
