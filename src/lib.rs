@@ -106,6 +106,8 @@ pub trait CommandConsumer {
 
     /// non-standard
     fn connect(&mut self, from: &str, to: &str);
+
+    fn set_area(&mut self, area: f64);
 }
 
 #[derive(Debug, Clone, Hash, PartialEq, PartialOrd)]
@@ -842,6 +844,20 @@ fn parse_mod(
                 }
 
                 consumer.connect(from, to);
+            }
+
+            ".area" => {
+                let val = args
+                    .next()
+                    .ok_or(BlifParserError::MissingArgs)?
+                    .parse()
+                    .map_err(|_| BlifParserError::Invalid)?;
+
+                if args.next().is_some() {
+                    Err(BlifParserError::TooManyArgs)?
+                }
+
+                consumer.set_area(val);
             }
 
             // TODO: clock & delay cst

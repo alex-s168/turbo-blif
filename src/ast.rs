@@ -127,10 +127,17 @@ impl From<ModelCmdKind> for ModelCmd {
     }
 }
 
-#[derive(Debug, Clone, Hash, PartialEq, PartialOrd)]
+#[derive(Debug, Clone, PartialEq, PartialOrd, Default)]
+pub struct ModelAttr {
+    /// from blif `.area` attribute
+    pub area: Option<f64>,
+}
+
+#[derive(Debug, Clone, PartialEq, PartialOrd)]
 pub struct Model {
     pub meta: ModelMeta,
     pub commands: Vec<ModelCmd>,
+    pub attr: ModelAttr,
 }
 
 impl CommandConsumer for Model {
@@ -214,6 +221,10 @@ impl CommandConsumer for Model {
             .into(),
         )
     }
+
+    fn set_area(&mut self, area: f64) {
+        self.attr.area = Some(area);
+    }
 }
 
 #[derive(Debug)]
@@ -225,12 +236,12 @@ pub enum FullBlifErr<E: std::fmt::Debug> {
     SearchPathsNotSupported,
 }
 
-#[derive(Debug, PartialEq, Hash)]
+#[derive(Debug, PartialEq)]
 pub enum BlifEntry {
     Model(Model),
 }
 
-#[derive(Debug, PartialEq, Hash)]
+#[derive(Debug, PartialEq)]
 pub struct Blif {
     pub entries: Vec<BlifEntry>,
     to_search: Vec<String>,
@@ -243,6 +254,7 @@ impl ModelConsumer for Blif {
         Model {
             meta,
             commands: vec![],
+            attr: Default::default(),
         }
     }
 
