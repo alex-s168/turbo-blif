@@ -17,7 +17,6 @@ low-memory-usage BLIF (berkeley logic interchange format) parser.
 | clock constraints (mostly for simulation)   | soon |  x  |   -   |  -  |         -        |     -    |          -              |    -     |        -       |     -      |
 | delay constraints                           | soon |  x  |   -   |  x  |         -        |     -    |          -              |    -     |        -       |     -      |
 | full BLIF specification [^1]                | soon |  x  |   -   |  -  |         -        |     -    |          -              |    -     |        -       |     -      |
-| ------------------------------------------- | ---- | --- | ----- | --- | ---------------- | -------- | ----------------------- | -------- | -------------- | ---------- |
 | extension: "Black- & White-boxes" [^2]      | soon |  -  |   -   |  -  |         -        |     -    |          -              |    -     |        -       |     -      |
 | extension: `.blackbox`                      | soon |  -  |   x   |  x  |         -        |     -    |          -              |    -     |        x       |     x      |
 | extension: `.cname` (EBLIF[^3])             |  x   |  -  |   x   |  -  |         -        |     -    |          -              |    -     |        x       |     x      |
