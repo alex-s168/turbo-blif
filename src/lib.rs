@@ -833,7 +833,7 @@ fn parse_mod(
                 });
             }
 
-            ".conn" => {
+            ".barbuff" | ".conn" => {
                 let from = args.next().ok_or(BlifParserError::MissingArgs)?.into();
                 let to = args.next().ok_or(BlifParserError::MissingArgs)?.into();
 
