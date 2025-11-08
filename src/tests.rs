@@ -602,8 +602,26 @@ fn delay_cst__default_spec() {
     // TODO: assert
 }
 
+#[test]
+fn delay_cst__delay() {
+    let ast = parse_str_blif_to_ast(
+        "top.blif",
+        r#"
+.model top
+.inputs a b c
+.names $true
+1
+
+.delay b NONINV 1.0 2.0 1.0 1.1 1.3 1.1
+
+"#,
+    )
+    .unwrap();
+
+    // TODO: assert
+}
+
 // TODO:
-//.delay <in-name> <phase> <load> <max-load> <brise> <drise> <bfall> <dfall>
 //.wire_load_slope <load>
 //.wire <wire-load-list>
 //.input_arrival <in-name> <rise> <fall> [<before-after> <event>]

@@ -108,6 +108,7 @@ pub trait CommandConsumer {
     fn connect(&mut self, from: &str, to: &str);
 
     fn set_area(&mut self, area: f64);
+    fn model_delay_constraint(&mut self, constraint: ModelDelayConstraint);
 
     fn set_cycle_time(&mut self, cycle_time: f32);
     fn clock_events(&mut self, events: ClockEvents);
@@ -363,6 +364,77 @@ fn str_to_tristates<C: FromIterator<Tristate>>(s: &str) -> Result<C, ()> {
             x.parse()
         })
         .collect::<Result<_, _>>()
+}
+
+#[derive(Debug, Clone, PartialEq, PartialOrd)]
+pub enum DelayConstraintPhase {
+    Inverting,
+    NonInverting,
+    Unknown,
+}
+
+impl DelayConstraintPhase {
+    fn parse(s: &str) -> Result<Self, BlifParserError> {
+        match s.to_lowercase().as_str() {
+            "inv" => Ok(Self::Inverting),
+            "noinv" | "noninv" => Ok(Self::Inverting),
+            "unknown" => Ok(Self::Unknown),
+            _ => Err(BlifParserError::Invalid),
+        }
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, PartialOrd)]
+pub struct InputDelayConstraint {
+    pub input: Str<0>,
+    pub phase: DelayConstraintPhase,
+    pub load: f32,
+    pub max_load: f32,
+    pub block_rise: f32,
+    pub drive_rise: f32,
+    pub block_fall: f32,
+    pub drive_fall: f32,
+}
+
+#[derive(Debug, Clone, PartialEq, PartialOrd)]
+pub enum BeforeAfter {
+    Before,
+    After,
+}
+
+#[derive(Debug, Clone, PartialEq, PartialOrd)]
+pub struct TimeRelativeToEvent {
+    pub ba: BeforeAfter,
+    pub event: Str<0>,
+}
+
+#[derive(Debug, Clone, PartialEq, PartialOrd)]
+pub struct SignalArrivalTime {
+    pub signal: Str<0>,
+    pub rise: f32,
+    pub fall: f32,
+    pub event_relative: Option<TimeRelativeToEvent>,
+}
+
+#[derive(Debug, Clone, PartialEq, PartialOrd)]
+pub enum ModelDelayConstraint {
+    Input(InputDelayConstraint),
+    /// wire load slope for the model
+    WireLoadSlope(f32),
+    /// wire loads for the model
+    WireLoads(Vec<f32>),
+    InputArrivalTime(SignalArrivalTime),
+    OutputRequiredTime(SignalArrivalTime),
+    /// for all inputs not explicitly specified
+    DefaultInputArrivalTime((f32, f32)),
+    DefaultOutputRequiredTime((f32, f32)),
+    // TODO:
+    // .input_drive <in-name> <rise> <fall>
+    // .default_input_drive <rise> <fall>
+    // .max_input_load <load>
+    // .default_max_input_load <load>
+    // .output_load <out-name> <load>
+    // .default_output_load <load>
 }
 
 fn tokenize(src: &str) -> Vec<&str> {
@@ -1023,7 +1095,74 @@ fn parse_mod(
                 consumer.clock_events(ClockEvents { percent, events });
             }
 
-            // TODO: delay cst
+            ".delay" => {
+                consumer.model_delay_constraint(ModelDelayConstraint::Input(
+                    InputDelayConstraint {
+                        input: args.next().ok_or(BlifParserError::MissingArgs)?.into(),
+                        phase: args
+                            .next()
+                            .ok_or(BlifParserError::MissingArgs)
+                            .and_then(DelayConstraintPhase::parse)?,
+                        load: args
+                            .next()
+                            .ok_or(BlifParserError::MissingArgs)?
+                            .parse()
+                            .map_err(|_| BlifParserError::Invalid)?,
+                        max_load: args
+                            .next()
+                            .ok_or(BlifParserError::MissingArgs)?
+                            .parse()
+                            .map_err(|_| BlifParserError::Invalid)?,
+                        block_rise: args
+                            .next()
+                            .ok_or(BlifParserError::MissingArgs)?
+                            .parse()
+                            .map_err(|_| BlifParserError::Invalid)?,
+                        drive_rise: args
+                            .next()
+                            .ok_or(BlifParserError::MissingArgs)?
+                            .parse()
+                            .map_err(|_| BlifParserError::Invalid)?,
+                        block_fall: args
+                            .next()
+                            .ok_or(BlifParserError::MissingArgs)?
+                            .parse()
+                            .map_err(|_| BlifParserError::Invalid)?,
+                        drive_fall: args
+                            .next()
+                            .ok_or(BlifParserError::MissingArgs)?
+                            .parse()
+                            .map_err(|_| BlifParserError::Invalid)?,
+                    },
+                ));
+
+                if args.next().is_some() {
+                    Err(BlifParserError::TooManyArgs)?
+                }
+            }
+
+            ".wire_load_slope" => {
+                let load = args
+                    .next()
+                    .ok_or(BlifParserError::MissingArgs)?
+                    .parse()
+                    .map_err(|_| BlifParserError::Invalid)?;
+                if args.next().is_some() {
+                    Err(BlifParserError::TooManyArgs)?
+                }
+
+                consumer.model_delay_constraint(ModelDelayConstraint::WireLoadSlope(load));
+            }
+
+            ".wire" => {
+                let loads = args
+                    .map(|x| x.parse())
+                    .collect::<Result<_, _>>()
+                    .map_err(|_| BlifParserError::Invalid)?;
+                consumer.model_delay_constraint(ModelDelayConstraint::WireLoads(loads));
+            }
+
+            // TODO: remaining delay cst
             // TODO: .blackblox
             _ => Err(BlifParserError::UnknownKw(cmd.to_string()))?,
         };

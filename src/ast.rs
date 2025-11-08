@@ -112,6 +112,7 @@ pub enum ModelCmdKind {
     },
     CycleTime(f32),
     ClockEvents(ClockEvents),
+    DelayConstraint(ModelDelayConstraint),
 }
 
 #[derive(Debug, Clone, PartialEq, PartialOrd)]
@@ -235,6 +236,11 @@ impl CommandConsumer for Model {
 
     fn clock_events(&mut self, events: ClockEvents) {
         self.commands.push(ModelCmdKind::ClockEvents(events).into())
+    }
+
+    fn model_delay_constraint(&mut self, constraint: ModelDelayConstraint) {
+        self.commands
+            .push(ModelCmdKind::DelayConstraint(constraint).into())
     }
 }
 
