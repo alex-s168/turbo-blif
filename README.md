@@ -15,7 +15,7 @@ low-memory-usage BLIF (berkeley logic interchange format) parser.
 | model attr: `.clock`                        |  x   |  x  |   x   |  -  |         -        |     -    |          -              |    -     |        -       |     x      |
 | sub-file references                         |  x   |  x  |   ?   |  -  |         x        |     -    |          -              |    -     |        -       |     -      |
 | finite state machines (`.start_kiss`)       |  x   |  x  |   -   |  -  |         x        |     -    |          -              |    -     |        -       |     -      |
-| clock constraints (mostly for simulation)   | soon |  x  |   -   |  -  |         -        |     -    |          -              |    -     |        -       |     -      |
+| clock constraints (mostly for simulation)   |  x   |  x  |   -   |  -  |         -        |     -    |          -              |    -     |        -       |     -      |
 | delay constraints                           | soon |  x  |   -   |  ~  |         -        |     -    |          -              |    -     |        -       |     -      |
 | full BLIF specification [^1]                | soon |  x  |   -   |  -  |         -        |     -    |          -              |    -     |        -       |     -      |
 | extension: "Black- & White-boxes" [^2]      | soon |  -  |   -   |  -  |         -        |     -    |          -              |    -     |        -       |     -      |

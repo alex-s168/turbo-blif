@@ -471,8 +471,8 @@ fn clock_cst() {
         "top.blif",
         r#"
 .clock clock1 clock2
-.clock_event 50.0 r’clock1
-.clock_event 50.0 (f’clock2 2.0 5.0)
+.clock_event 50.0 r'clock1
+.clock_event 50.0 (f'clock2 2.0 5.0)
 "#,
     )
     .unwrap();

@@ -108,6 +108,9 @@ pub trait CommandConsumer {
     fn connect(&mut self, from: &str, to: &str);
 
     fn set_area(&mut self, area: f64);
+
+    fn set_cycle_time(&mut self, cycle_time: f32);
+    fn clock_events(&mut self, events: ClockEvents);
 }
 
 #[derive(Debug, Clone, Hash, PartialEq, PartialOrd)]
@@ -128,6 +131,31 @@ pub trait ModelConsumer {
 
     // search the given BLIF file for additional model declarations
     fn search(&mut self, path: &str);
+}
+
+#[derive(Debug, Clone, Hash, PartialEq, PartialOrd)]
+pub enum ClockEdgeKind {
+    Rise,
+    Fall,
+}
+
+/// before and after are used to the define the "skew" in the clock edges.
+///
+/// the unit is to be interpreted by the user
+///
+/// the nominal time is [ClockEvent.percent] of the current cycle time
+#[derive(Debug, Clone, PartialEq, PartialOrd)]
+pub struct ClockEvent {
+    pub edge: ClockEdgeKind,
+    pub clock_name: Str<16>,
+    /// maximum amount of time before/after the nominal time that the edge can arrive
+    pub before_after: Option<(f32, f32)>,
+}
+
+#[derive(Debug, Clone, PartialEq, PartialOrd)]
+pub struct ClockEvents {
+    pub percent: f32,
+    pub events: Vec<ClockEvent>,
 }
 
 fn parse_padding(lines: &mut Peekable<impl Iterator<Item = impl AsRef<str>>>) {
@@ -337,6 +365,75 @@ fn str_to_tristates<C: FromIterator<Tristate>>(s: &str) -> Result<C, ()> {
         .collect::<Result<_, _>>()
 }
 
+fn tokenize(src: &str) -> Vec<&str> {
+    let mut out = vec![];
+    let mut iter = src.chars().enumerate().peekable();
+
+    let mut first = None;
+    let mut ind = 0;
+
+    while let Some(x) = iter.next() {
+        match (x.1, first, ind) {
+            ('(', _, _) => {
+                if ind == 0 {
+                    first = Some(x.0);
+                }
+                ind += 1;
+            }
+            (')', Some(f), _) => {
+                if ind > 0 {
+                    ind -= 1;
+                }
+                if ind == 0 {
+                    out.push(&src[f..=x.0]);
+                    first = None;
+                }
+            }
+            (' ', None, 0) => {}
+            (' ', Some(f), 0) => {
+                out.push(&src[f..x.0]);
+                first = None;
+            }
+            (_, None, _) => {
+                first = Some(x.0);
+            }
+            (_, Some(_), _) => {}
+        }
+    }
+
+    if let Some(s) = first {
+        out.push(&src[s..]);
+    }
+
+    out
+}
+
+#[test]
+fn test_tokenize_simple() {
+    assert_eq!(
+        tokenize("This should be   split at          spaces   "),
+        vec!["This", "should", "be", "split", "at", "spaces"],
+    );
+    assert_eq!(
+        tokenize("    This should be   split at          spaces   "),
+        vec!["This", "should", "be", "split", "at", "spaces"],
+    );
+}
+
+#[test]
+fn test_tokenize_parens() {
+    assert_eq!(
+        tokenize("This (is some example) text (with (some nesting) yay) works"),
+        vec![
+            "This",
+            "(is some example)",
+            "text",
+            "(with (some nesting) yay)",
+            "works"
+        ],
+    );
+}
+
 fn parse_mod(
     name: &str,
     consumer: &mut impl ModelConsumer,
@@ -409,7 +506,7 @@ fn parse_mod(
             break;
         }
 
-        let mut args = line.split(' ');
+        let mut args = tokenize(line).into_iter();
         let cmd = args.next().ok_or(BlifParserError::Invalid)?;
 
         match cmd {
@@ -860,7 +957,73 @@ fn parse_mod(
                 consumer.set_area(val);
             }
 
-            // TODO: clock & delay cst
+            ".cycle" => {
+                let val = args
+                    .next()
+                    .ok_or(BlifParserError::MissingArgs)?
+                    .parse()
+                    .map_err(|_| BlifParserError::Invalid)?;
+
+                if args.next().is_some() {
+                    Err(BlifParserError::TooManyArgs)?
+                }
+
+                consumer.set_cycle_time(val);
+            }
+
+            ".clock_event" => {
+                let percent = args
+                    .next()
+                    .ok_or(BlifParserError::MissingArgs)?
+                    .parse()
+                    .map_err(|_| BlifParserError::Invalid)?;
+
+                fn parse_rfcn(src: &str) -> Result<(ClockEdgeKind, &str), BlifParserError> {
+                    let (edge, name) = src.split_once('\'').ok_or(BlifParserError::Invalid)?;
+                    Ok((
+                        match edge {
+                            "r" => ClockEdgeKind::Rise,
+                            "f" => ClockEdgeKind::Fall,
+                            _ => Err(BlifParserError::Invalid)?,
+                        },
+                        name,
+                    ))
+                }
+
+                let events = args
+                    .map(|x| -> Result<_, _> {
+                        Ok(if x.chars().next().is_some_and(|x| x == '(') {
+                            if x.chars().last() != Some(')') {
+                                Err(BlifParserError::Invalid)?;
+                            }
+                            let tokens = tokenize(&x[1..x.len() - 1]);
+                            if tokens.len() != 3 {
+                                Err(BlifParserError::Invalid)?
+                            }
+                            let (edge, name) = parse_rfcn(tokens[0])?;
+                            ClockEvent {
+                                edge,
+                                clock_name: name.into(),
+                                before_after: Some((
+                                    tokens[1].parse().map_err(|_| BlifParserError::Invalid)?,
+                                    tokens[2].parse().map_err(|_| BlifParserError::Invalid)?,
+                                )),
+                            }
+                        } else {
+                            let (edge, name) = parse_rfcn(x)?;
+                            ClockEvent {
+                                edge,
+                                clock_name: name.into(),
+                                before_after: None,
+                            }
+                        })
+                    })
+                    .collect::<Result<Vec<_>, _>>()?;
+
+                consumer.clock_events(ClockEvents { percent, events });
+            }
+
+            // TODO: delay cst
             // TODO: .blackblox
             _ => Err(BlifParserError::UnknownKw(cmd.to_string()))?,
         };

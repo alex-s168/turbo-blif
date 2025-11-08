@@ -95,7 +95,7 @@ pub enum CellAttrAst {
     Param { key: Str<16>, val: String },
 }
 
-#[derive(Debug, Clone, Hash, PartialEq, PartialOrd)]
+#[derive(Debug, Clone, PartialEq, PartialOrd)]
 pub enum ModelCmdKind {
     Gate(Gate),
     FF(FlipFlop),
@@ -110,9 +110,11 @@ pub enum ModelCmdKind {
         from: Str<16>,
         to: Str<16>,
     },
+    CycleTime(f32),
+    ClockEvents(ClockEvents),
 }
 
-#[derive(Debug, Clone, Hash, PartialEq, PartialOrd)]
+#[derive(Debug, Clone, PartialEq, PartialOrd)]
 pub struct ModelCmd {
     pub kind: ModelCmdKind,
     pub attrs: Vec<CellAttrAst>,
@@ -224,6 +226,15 @@ impl CommandConsumer for Model {
 
     fn set_area(&mut self, area: f64) {
         self.attr.area = Some(area);
+    }
+
+    fn set_cycle_time(&mut self, cycle_time: f32) {
+        self.commands
+            .push(ModelCmdKind::CycleTime(cycle_time).into())
+    }
+
+    fn clock_events(&mut self, events: ClockEvents) {
+        self.commands.push(ModelCmdKind::ClockEvents(events).into())
     }
 }
 
