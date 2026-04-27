@@ -377,7 +377,7 @@ impl DelayConstraintPhase {
     fn parse(s: &str) -> Result<Self, BlifParserError> {
         match s.to_lowercase().as_str() {
             "inv" => Ok(Self::Inverting),
-            "noinv" | "noninv" => Ok(Self::Inverting),
+            "noinv" | "noninv" => Ok(Self::NonInverting),
             "unknown" => Ok(Self::Unknown),
             _ => Err(BlifParserError::Invalid),
         }
@@ -445,8 +445,11 @@ pub enum ModelDelayConstraint {
     DefaultInputDrive((f32, f32)),
     MaxInputLoad(SignalLoad),
     DefaultMaxInputLoad(f32),
-    OutputLoad(SignalDrive),
-    DefaultOutputLoad((f32, f32)),
+    OutputLoad(SignalLoad),
+    DefaultOutputLoad(f32),
+    AndGateDelay(f32),
+    InputRequired(SignalLoad),
+    OutputArrival(SignalLoad),
 }
 
 fn tokenize(src: &str) -> Vec<&str> {
@@ -1108,48 +1111,85 @@ fn parse_mod(
             }
 
             ".delay" => {
-                consumer.model_delay_constraint(ModelDelayConstraint::Input(
-                    InputDelayConstraint {
-                        input: args.next().ok_or(BlifParserError::MissingArgs)?.into(),
-                        phase: args
-                            .next()
-                            .ok_or(BlifParserError::MissingArgs)
-                            .and_then(DelayConstraintPhase::parse)?,
-                        load: args
-                            .next()
-                            .ok_or(BlifParserError::MissingArgs)?
-                            .parse()
-                            .map_err(|_| BlifParserError::Invalid)?,
-                        max_load: args
-                            .next()
-                            .ok_or(BlifParserError::MissingArgs)?
-                            .parse()
-                            .map_err(|_| BlifParserError::Invalid)?,
-                        block_rise: args
-                            .next()
-                            .ok_or(BlifParserError::MissingArgs)?
-                            .parse()
-                            .map_err(|_| BlifParserError::Invalid)?,
-                        drive_rise: args
-                            .next()
-                            .ok_or(BlifParserError::MissingArgs)?
-                            .parse()
-                            .map_err(|_| BlifParserError::Invalid)?,
-                        block_fall: args
-                            .next()
-                            .ok_or(BlifParserError::MissingArgs)?
-                            .parse()
-                            .map_err(|_| BlifParserError::Invalid)?,
-                        drive_fall: args
-                            .next()
-                            .ok_or(BlifParserError::MissingArgs)?
-                            .parse()
-                            .map_err(|_| BlifParserError::Invalid)?,
-                    },
-                ));
+                let arg0 = args.next().ok_or(BlifParserError::MissingArgs)?;
+                let arg1 = args.next();
 
-                if args.next().is_some() {
-                    Err(BlifParserError::TooManyArgs)?
+                if arg1.is_none() {
+                    // .delay <delay>  (global)
+                    let delay = arg0.parse().map_err(|_| BlifParserError::Invalid)?;
+                    consumer.model_delay_constraint(ModelDelayConstraint::AndGateDelay(delay));
+                } else if arg1.as_ref().unwrap().parse::<f32>().is_ok()
+                    && args.clone().next().is_none()
+                {
+                    // .delay <signal> <delay>  (per-signal) — second token is a float and no more args
+                    let signal: Str<0> = arg0.into();
+                    let time = arg1
+                        .unwrap()
+                        .parse()
+                        .map_err(|_| BlifParserError::Invalid)?;
+                    consumer.model_delay_constraint(ModelDelayConstraint::InputRequired(
+                        SignalLoad { signal, load: time },
+                    ));
+                } else {
+                    let arg2 = args.next();
+                    if arg2.as_ref().is_some_and(|a| a.parse::<f32>().is_ok())
+                        && args.clone().next().is_none()
+                    {
+                        // .delay <in-sig> <out-sig> <delay>  (per-pair) — ABC extension
+                        // Currently ignored as no dedicated AST variant exists.
+                    } else {
+                        // .delay <in-name> <phase> <load> <max-load> <brise> <drise> <bfall> <dfall>  (original BLIF)
+                        let input: Str<0> = arg0.into();
+                        let phase = arg1
+                            .ok_or(BlifParserError::MissingArgs)
+                            .and_then(DelayConstraintPhase::parse)?;
+                        let load = arg2
+                            .ok_or(BlifParserError::MissingArgs)?
+                            .parse()
+                            .map_err(|_| BlifParserError::Invalid)?;
+                        let max_load = args
+                            .next()
+                            .ok_or(BlifParserError::MissingArgs)?
+                            .parse()
+                            .map_err(|_| BlifParserError::Invalid)?;
+                        let block_rise = args
+                            .next()
+                            .ok_or(BlifParserError::MissingArgs)?
+                            .parse()
+                            .map_err(|_| BlifParserError::Invalid)?;
+                        let drive_rise = args
+                            .next()
+                            .ok_or(BlifParserError::MissingArgs)?
+                            .parse()
+                            .map_err(|_| BlifParserError::Invalid)?;
+                        let block_fall = args
+                            .next()
+                            .ok_or(BlifParserError::MissingArgs)?
+                            .parse()
+                            .map_err(|_| BlifParserError::Invalid)?;
+                        let drive_fall = args
+                            .next()
+                            .ok_or(BlifParserError::MissingArgs)?
+                            .parse()
+                            .map_err(|_| BlifParserError::Invalid)?;
+
+                        if args.next().is_some() {
+                            Err(BlifParserError::TooManyArgs)?
+                        }
+
+                        consumer.model_delay_constraint(ModelDelayConstraint::Input(
+                            InputDelayConstraint {
+                                input,
+                                phase,
+                                load,
+                                max_load,
+                                block_rise,
+                                drive_rise,
+                                block_fall,
+                                drive_fall,
+                            },
+                        ));
+                    }
                 }
             }
 
@@ -1174,8 +1214,267 @@ fn parse_mod(
                 consumer.model_delay_constraint(ModelDelayConstraint::WireLoads(loads));
             }
 
-            // TODO: remaining delay cst
-            // TODO: .blackblox
+            ".input_arrival" => {
+                let signal = args.next().ok_or(BlifParserError::MissingArgs)?.into();
+                let rise = args
+                    .next()
+                    .ok_or(BlifParserError::MissingArgs)?
+                    .parse()
+                    .map_err(|_| BlifParserError::Invalid)?;
+                let fall = args
+                    .next()
+                    .ok_or(BlifParserError::MissingArgs)?
+                    .parse()
+                    .map_err(|_| BlifParserError::Invalid)?;
+                let event_relative = if let Some(ba) = args.next() {
+                    let ba = match ba {
+                        "b" => BeforeAfter::Before,
+                        "a" => BeforeAfter::After,
+                        _ => Err(BlifParserError::Invalid)?,
+                    };
+                    let event = args.next().ok_or(BlifParserError::MissingArgs)?.into();
+                    Some(TimeRelativeToEvent { ba, event })
+                } else {
+                    None
+                };
+                if args.next().is_some() {
+                    Err(BlifParserError::TooManyArgs)?
+                }
+                consumer.model_delay_constraint(ModelDelayConstraint::InputArrivalTime(
+                    SignalArrivalTime {
+                        signal,
+                        rise,
+                        fall,
+                        event_relative,
+                    },
+                ));
+            }
+
+            ".output_required" => {
+                let signal = args.next().ok_or(BlifParserError::MissingArgs)?.into();
+                let rise = args
+                    .next()
+                    .ok_or(BlifParserError::MissingArgs)?
+                    .parse()
+                    .map_err(|_| BlifParserError::Invalid)?;
+                let fall = args
+                    .next()
+                    .ok_or(BlifParserError::MissingArgs)?
+                    .parse()
+                    .map_err(|_| BlifParserError::Invalid)?;
+                let event_relative = if let Some(ba) = args.next() {
+                    let ba = match ba {
+                        "b" => BeforeAfter::Before,
+                        "a" => BeforeAfter::After,
+                        _ => Err(BlifParserError::Invalid)?,
+                    };
+                    let event = args.next().ok_or(BlifParserError::MissingArgs)?.into();
+                    Some(TimeRelativeToEvent { ba, event })
+                } else {
+                    None
+                };
+                if args.next().is_some() {
+                    Err(BlifParserError::TooManyArgs)?
+                }
+                consumer.model_delay_constraint(ModelDelayConstraint::OutputRequiredTime(
+                    SignalArrivalTime {
+                        signal,
+                        rise,
+                        fall,
+                        event_relative,
+                    },
+                ));
+            }
+
+            ".default_input_arrival" => {
+                let rise = args
+                    .next()
+                    .ok_or(BlifParserError::MissingArgs)?
+                    .parse()
+                    .map_err(|_| BlifParserError::Invalid)?;
+                let fall = args
+                    .next()
+                    .ok_or(BlifParserError::MissingArgs)?
+                    .parse()
+                    .map_err(|_| BlifParserError::Invalid)?;
+                if args.next().is_some() {
+                    Err(BlifParserError::TooManyArgs)?
+                }
+                consumer.model_delay_constraint(ModelDelayConstraint::DefaultInputArrivalTime((
+                    rise, fall,
+                )));
+            }
+
+            ".default_output_required" => {
+                let rise = args
+                    .next()
+                    .ok_or(BlifParserError::MissingArgs)?
+                    .parse()
+                    .map_err(|_| BlifParserError::Invalid)?;
+                let fall = args
+                    .next()
+                    .ok_or(BlifParserError::MissingArgs)?
+                    .parse()
+                    .map_err(|_| BlifParserError::Invalid)?;
+                if args.next().is_some() {
+                    Err(BlifParserError::TooManyArgs)?
+                }
+                consumer.model_delay_constraint(ModelDelayConstraint::DefaultOutputRequiredTime((
+                    rise, fall,
+                )));
+            }
+
+            ".input_drive" => {
+                let signal = args.next().ok_or(BlifParserError::MissingArgs)?.into();
+                let rise = args
+                    .next()
+                    .ok_or(BlifParserError::MissingArgs)?
+                    .parse()
+                    .map_err(|_| BlifParserError::Invalid)?;
+                let fall = args
+                    .next()
+                    .ok_or(BlifParserError::MissingArgs)?
+                    .parse()
+                    .map_err(|_| BlifParserError::Invalid)?;
+                if args.next().is_some() {
+                    Err(BlifParserError::TooManyArgs)?
+                }
+                consumer.model_delay_constraint(ModelDelayConstraint::InputDrive(SignalDrive {
+                    signal,
+                    rise,
+                    fall,
+                }));
+            }
+
+            ".default_input_drive" => {
+                let rise = args
+                    .next()
+                    .ok_or(BlifParserError::MissingArgs)?
+                    .parse()
+                    .map_err(|_| BlifParserError::Invalid)?;
+                let fall = args
+                    .next()
+                    .ok_or(BlifParserError::MissingArgs)?
+                    .parse()
+                    .map_err(|_| BlifParserError::Invalid)?;
+                if args.next().is_some() {
+                    Err(BlifParserError::TooManyArgs)?
+                }
+                consumer
+                    .model_delay_constraint(ModelDelayConstraint::DefaultInputDrive((rise, fall)));
+            }
+
+            ".output_load" => {
+                let signal = args.next().ok_or(BlifParserError::MissingArgs)?.into();
+                let load = args
+                    .next()
+                    .ok_or(BlifParserError::MissingArgs)?
+                    .parse()
+                    .map_err(|_| BlifParserError::Invalid)?;
+                if args.next().is_some() {
+                    Err(BlifParserError::TooManyArgs)?
+                }
+                consumer.model_delay_constraint(ModelDelayConstraint::OutputLoad(SignalLoad {
+                    signal,
+                    load,
+                }));
+            }
+
+            ".default_output_load" => {
+                let load = args
+                    .next()
+                    .ok_or(BlifParserError::MissingArgs)?
+                    .parse()
+                    .map_err(|_| BlifParserError::Invalid)?;
+                if args.next().is_some() {
+                    Err(BlifParserError::TooManyArgs)?
+                }
+                consumer.model_delay_constraint(ModelDelayConstraint::DefaultOutputLoad(load));
+            }
+
+            ".max_input_load" => {
+                let signal = args.next().ok_or(BlifParserError::MissingArgs)?.into();
+                let load = args
+                    .next()
+                    .ok_or(BlifParserError::MissingArgs)?
+                    .parse()
+                    .map_err(|_| BlifParserError::Invalid)?;
+                if args.next().is_some() {
+                    Err(BlifParserError::TooManyArgs)?
+                }
+                consumer.model_delay_constraint(ModelDelayConstraint::MaxInputLoad(SignalLoad {
+                    signal,
+                    load,
+                }));
+            }
+
+            ".default_max_input_load" => {
+                let load = args
+                    .next()
+                    .ok_or(BlifParserError::MissingArgs)?
+                    .parse()
+                    .map_err(|_| BlifParserError::Invalid)?;
+                if args.next().is_some() {
+                    Err(BlifParserError::TooManyArgs)?
+                }
+                consumer.model_delay_constraint(ModelDelayConstraint::DefaultMaxInputLoad(load));
+            }
+
+            ".and_gate_delay" => {
+                let delay = args
+                    .next()
+                    .ok_or(BlifParserError::MissingArgs)?
+                    .parse()
+                    .map_err(|_| BlifParserError::Invalid)?;
+                if args.next().is_some() {
+                    Err(BlifParserError::TooManyArgs)?
+                }
+                consumer.model_delay_constraint(ModelDelayConstraint::AndGateDelay(delay));
+            }
+
+            ".input_required" => {
+                let signal = args.next().ok_or(BlifParserError::MissingArgs)?.into();
+                let time = args
+                    .next()
+                    .ok_or(BlifParserError::MissingArgs)?
+                    .parse()
+                    .map_err(|_| BlifParserError::Invalid)?;
+                if args.next().is_some() {
+                    Err(BlifParserError::TooManyArgs)?
+                }
+                consumer.model_delay_constraint(ModelDelayConstraint::InputRequired(SignalLoad {
+                    signal,
+                    load: time,
+                }));
+            }
+
+            ".output_arrival" => {
+                let signal = args.next().ok_or(BlifParserError::MissingArgs)?.into();
+                let time = args
+                    .next()
+                    .ok_or(BlifParserError::MissingArgs)?
+                    .parse()
+                    .map_err(|_| BlifParserError::Invalid)?;
+                if args.next().is_some() {
+                    Err(BlifParserError::TooManyArgs)?
+                }
+                consumer.model_delay_constraint(ModelDelayConstraint::OutputArrival(SignalLoad {
+                    signal,
+                    load: time,
+                }));
+            }
+
+            ".attrib" | ".no_merge" => {
+                // Box attributes and no-merge directives are parsed but currently ignored.
+                let _ = args.collect::<Vec<_>>();
+            }
+
+            ".blackbox" => {
+                if args.next().is_some() {
+                    Err(BlifParserError::TooManyArgs)?
+                }
+            }
+
             _ => Err(BlifParserError::UnknownKw(cmd.to_string()))?,
         };
     }
