@@ -417,6 +417,19 @@ pub struct SignalArrivalTime {
 }
 
 #[derive(Debug, Clone, PartialEq, PartialOrd)]
+pub struct SignalDrive {
+    pub signal: Str<0>,
+    pub rise: f32,
+    pub fall: f32,
+}
+
+#[derive(Debug, Clone, PartialEq, PartialOrd)]
+pub struct SignalLoad {
+    pub signal: Str<0>,
+    pub load: f32,
+}
+
+#[derive(Debug, Clone, PartialEq, PartialOrd)]
 pub enum ModelDelayConstraint {
     Input(InputDelayConstraint),
     /// wire load slope for the model
@@ -428,13 +441,12 @@ pub enum ModelDelayConstraint {
     /// for all inputs not explicitly specified
     DefaultInputArrivalTime((f32, f32)),
     DefaultOutputRequiredTime((f32, f32)),
-    // TODO:
-    // .input_drive <in-name> <rise> <fall>
-    // .default_input_drive <rise> <fall>
-    // .max_input_load <load>
-    // .default_max_input_load <load>
-    // .output_load <out-name> <load>
-    // .default_output_load <load>
+    InputDrive(SignalDrive),
+    DefaultInputDrive((f32, f32)),
+    MaxInputLoad(SignalLoad),
+    DefaultMaxInputLoad(f32),
+    OutputLoad(SignalDrive),
+    DefaultOutputLoad((f32, f32)),
 }
 
 fn tokenize(src: &str) -> Vec<&str> {
