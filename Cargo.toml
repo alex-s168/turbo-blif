@@ -2,6 +2,9 @@
 name = "turbo-blif"
 version = "0.1.0"
 edition = "2024"
+authors = ["Alexander Nutz <alexander.nutz@vxcc.dev>"]
+description = "BLIF parser supporting all known extensions"
+license = "0BSD"
 
 [dependencies]
 smallstr = "0.3.1"
