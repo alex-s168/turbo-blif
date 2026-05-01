@@ -44,6 +44,7 @@ use smallvec::SmallVec;
 use std::{iter::Peekable, str::FromStr};
 
 pub mod ast;
+pub mod writer;
 
 /// A fixed-capacity, inline-or-heap string used throughout the crate.
 ///
