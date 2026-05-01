@@ -772,12 +772,12 @@ pub enum ModelDelayConstraint {
 /// groups as single tokens.
 fn tokenize(src: &str) -> Vec<&str> {
     let mut out = vec![];
-    let mut iter = src.chars().enumerate().peekable();
+    let iter = src.chars().enumerate().peekable();
 
     let mut first = None;
     let mut ind = 0;
 
-    while let Some(x) = iter.next() {
+    for x in iter {
         match (x.1, first, ind) {
             ('(', _, _) => {
                 if ind == 0 {
@@ -1075,7 +1075,7 @@ fn parse_mod(
             ".subckt" => {
                 let raw = args.next().ok_or(BlifParserError::MissingArgs)?;
                 let (name, instance_name) = if let Some((m, inst)) = raw.split_once('|') {
-                    (m.into(), Some(inst))
+                    (m, Some(inst))
                 } else {
                     (raw, None)
                 };
@@ -1091,7 +1091,7 @@ fn parse_mod(
             }
 
             ".search" => {
-                let path = args.next().ok_or(BlifParserError::MissingArgs)?.into();
+                let path = args.next().ok_or(BlifParserError::MissingArgs)?;
 
                 if args.next().is_some() {
                     Err(BlifParserError::TooManyArgs)?
@@ -1224,8 +1224,7 @@ fn parse_mod(
                     }
                 };
 
-                let mut fsm =
-                    consumer.fsm(num_ins, num_outs, reset_state.as_ref().map(|x| x.as_str()));
+                let mut fsm = consumer.fsm(num_ins, num_outs, reset_state.as_deref());
 
                 while {
                     parse_padding(lines);
@@ -1304,7 +1303,7 @@ fn parse_mod(
                 consumer.fsm_done(
                     fsm,
                     latch_order,
-                    if code_mapping.len() == 0 {
+                    if code_mapping.is_empty() {
                         None
                     } else {
                         Some(code_mapping)
@@ -1313,7 +1312,7 @@ fn parse_mod(
             }
 
             ".cname" => {
-                let arg = args.next().ok_or(BlifParserError::MissingArgs)?.into();
+                let arg = args.next().ok_or(BlifParserError::MissingArgs)?;
 
                 if args.next().is_some() {
                     Err(BlifParserError::TooManyArgs)?
@@ -1323,7 +1322,7 @@ fn parse_mod(
             }
 
             ".attr" => {
-                let key = args.next().ok_or(BlifParserError::MissingArgs)?.into();
+                let key = args.next().ok_or(BlifParserError::MissingArgs)?;
 
                 let val = args.fold(String::new(), |acc, x| {
                     let mut acc = acc;
@@ -1338,7 +1337,7 @@ fn parse_mod(
             }
 
             ".param" => {
-                let key = args.next().ok_or(BlifParserError::MissingArgs)?.into();
+                let key = args.next().ok_or(BlifParserError::MissingArgs)?;
 
                 let val = args.fold(String::new(), |acc, x| {
                     let mut acc = acc;
@@ -1353,8 +1352,8 @@ fn parse_mod(
             }
 
             ".barbuff" | ".barbuf" | ".conn" => {
-                let from = args.next().ok_or(BlifParserError::MissingArgs)?.into();
-                let to = args.next().ok_or(BlifParserError::MissingArgs)?.into();
+                let from = args.next().ok_or(BlifParserError::MissingArgs)?;
+                let to = args.next().ok_or(BlifParserError::MissingArgs)?;
 
                 if args.next().is_some() {
                     Err(BlifParserError::TooManyArgs)?
@@ -1413,7 +1412,7 @@ fn parse_mod(
                 let events = args
                     .map(|x| -> Result<_, _> {
                         Ok(if x.chars().next().is_some_and(|x| x == '(') {
-                            if x.chars().last() != Some(')') {
+                            if !x.ends_with(')') {
                                 Err(BlifParserError::Invalid)?;
                             }
                             let tokens = tokenize(&x[1..x.len() - 1]);
@@ -1447,91 +1446,88 @@ fn parse_mod(
                 let arg0 = args.next().ok_or(BlifParserError::MissingArgs)?;
                 let arg1 = args.next();
 
-                if arg1.is_none() {
-                    // .delay <delay>  (global)
-                    let delay = arg0.parse().map_err(|_| BlifParserError::Invalid)?;
-                    consumer.model_delay_constraint(ModelDelayConstraint::AndGateDelay(delay));
-                } else if arg1.as_ref().unwrap().parse::<f32>().is_ok()
-                    && args.clone().next().is_none()
-                {
-                    // .delay <signal> <delay>  (per-signal) — second token is a float and no more args
-                    let signal: Str<0> = arg0.into();
-                    let time = arg1
-                        .unwrap()
-                        .parse()
-                        .map_err(|_| BlifParserError::Invalid)?;
-                    consumer.model_delay_constraint(ModelDelayConstraint::InputRequired(
-                        SignalLoad { signal, load: time },
-                    ));
-                } else {
-                    let arg2 = args.next();
-                    if arg2.as_ref().is_some_and(|a| a.parse::<f32>().is_ok())
-                        && args.clone().next().is_none()
+                match arg1 {
+                    None => {
+                        // .delay <delay>  (global)
+                        let delay = arg0.parse().map_err(|_| BlifParserError::Invalid)?;
+                        consumer.model_delay_constraint(ModelDelayConstraint::AndGateDelay(delay));
+                    }
+                    Some(arg1_val)
+                        if arg1_val.parse::<f32>().is_ok() && args.clone().next().is_none() =>
                     {
-                        // .delay <in-sig> <out-sig> <delay>  (per-pair) — ABC extension
-                        let in_sig: Str<0> = arg0.into();
-                        let out_sig: Str<0> = arg1.unwrap().into();
-                        let delay = arg2
-                            .unwrap()
-                            .parse()
-                            .map_err(|_| BlifParserError::Invalid)?;
-                        consumer.model_delay_constraint(ModelDelayConstraint::DelayPerPair {
-                            in_sig,
-                            out_sig,
-                            delay,
-                        });
-                    } else {
-                        // .delay <in-name> <phase> <load> <max-load> <brise> <drise> <bfall> <dfall>  (original BLIF)
-                        let input: Str<0> = arg0.into();
-                        let phase = arg1
-                            .ok_or(BlifParserError::MissingArgs)
-                            .and_then(DelayConstraintPhase::parse)?;
-                        let load = arg2
-                            .ok_or(BlifParserError::MissingArgs)?
-                            .parse()
-                            .map_err(|_| BlifParserError::Invalid)?;
-                        let max_load = args
-                            .next()
-                            .ok_or(BlifParserError::MissingArgs)?
-                            .parse()
-                            .map_err(|_| BlifParserError::Invalid)?;
-                        let block_rise = args
-                            .next()
-                            .ok_or(BlifParserError::MissingArgs)?
-                            .parse()
-                            .map_err(|_| BlifParserError::Invalid)?;
-                        let drive_rise = args
-                            .next()
-                            .ok_or(BlifParserError::MissingArgs)?
-                            .parse()
-                            .map_err(|_| BlifParserError::Invalid)?;
-                        let block_fall = args
-                            .next()
-                            .ok_or(BlifParserError::MissingArgs)?
-                            .parse()
-                            .map_err(|_| BlifParserError::Invalid)?;
-                        let drive_fall = args
-                            .next()
-                            .ok_or(BlifParserError::MissingArgs)?
-                            .parse()
-                            .map_err(|_| BlifParserError::Invalid)?;
-
-                        if args.next().is_some() {
-                            Err(BlifParserError::TooManyArgs)?
-                        }
-
-                        consumer.model_delay_constraint(ModelDelayConstraint::Input(
-                            InputDelayConstraint {
-                                input,
-                                phase,
-                                load,
-                                max_load,
-                                block_rise,
-                                drive_rise,
-                                block_fall,
-                                drive_fall,
-                            },
+                        // .delay <signal> <delay>  (per-signal) — second token is a float and no more args
+                        let signal: Str<0> = arg0.into();
+                        let time = arg1_val.parse().map_err(|_| BlifParserError::Invalid)?;
+                        consumer.model_delay_constraint(ModelDelayConstraint::InputRequired(
+                            SignalLoad { signal, load: time },
                         ));
+                    }
+                    Some(arg1_val) => {
+                        let arg2 = args.next();
+                        if let Some(arg2_val) = arg2 {
+                            if arg2_val.parse::<f32>().is_ok() && args.clone().next().is_none() {
+                                // .delay <in-sig> <out-sig> <delay>  (per-pair) — ABC extension
+                                let in_sig: Str<0> = arg0.into();
+                                let out_sig: Str<0> = arg1_val.into();
+                                let delay =
+                                    arg2_val.parse().map_err(|_| BlifParserError::Invalid)?;
+                                consumer.model_delay_constraint(
+                                    ModelDelayConstraint::DelayPerPair {
+                                        in_sig,
+                                        out_sig,
+                                        delay,
+                                    },
+                                );
+                            } else {
+                                // .delay <in-name> <phase> <load> <max-load> <brise> <drise> <bfall> <dfall>  (original BLIF)
+                                let input: Str<0> = arg0.into();
+                                let phase = DelayConstraintPhase::parse(arg1_val)?;
+                                let load =
+                                    arg2_val.parse().map_err(|_| BlifParserError::Invalid)?;
+                                let max_load = args
+                                    .next()
+                                    .ok_or(BlifParserError::MissingArgs)?
+                                    .parse()
+                                    .map_err(|_| BlifParserError::Invalid)?;
+                                let block_rise = args
+                                    .next()
+                                    .ok_or(BlifParserError::MissingArgs)?
+                                    .parse()
+                                    .map_err(|_| BlifParserError::Invalid)?;
+                                let drive_rise = args
+                                    .next()
+                                    .ok_or(BlifParserError::MissingArgs)?
+                                    .parse()
+                                    .map_err(|_| BlifParserError::Invalid)?;
+                                let block_fall = args
+                                    .next()
+                                    .ok_or(BlifParserError::MissingArgs)?
+                                    .parse()
+                                    .map_err(|_| BlifParserError::Invalid)?;
+                                let drive_fall = args
+                                    .next()
+                                    .ok_or(BlifParserError::MissingArgs)?
+                                    .parse()
+                                    .map_err(|_| BlifParserError::Invalid)?;
+
+                                if args.next().is_some() {
+                                    Err(BlifParserError::TooManyArgs)?
+                                }
+
+                                consumer.model_delay_constraint(ModelDelayConstraint::Input(
+                                    InputDelayConstraint {
+                                        input,
+                                        phase,
+                                        load,
+                                        max_load,
+                                        block_rise,
+                                        drive_rise,
+                                        block_fall,
+                                        drive_fall,
+                                    },
+                                ));
+                            }
+                        }
                     }
                 }
             }
@@ -1820,8 +1816,8 @@ fn parse_mod(
 
             // BLIF-MV: .short <in> <out> — buffer (equivalent to .conn)
             ".short" => {
-                let from = args.next().ok_or(BlifParserError::MissingArgs)?.into();
-                let to = args.next().ok_or(BlifParserError::MissingArgs)?.into();
+                let from = args.next().ok_or(BlifParserError::MissingArgs)?;
+                let to = args.next().ok_or(BlifParserError::MissingArgs)?;
                 if args.next().is_some() {
                     Err(BlifParserError::TooManyArgs)?
                 }
@@ -1866,7 +1862,7 @@ fn parse_mod(
 
             // BLIF-MV: .spec <file-name>
             ".spec" => {
-                let filename = args.next().ok_or(BlifParserError::MissingArgs)?.into();
+                let filename = args.next().ok_or(BlifParserError::MissingArgs)?;
                 if args.next().is_some() {
                     Err(BlifParserError::TooManyArgs)?
                 }
@@ -1969,7 +1965,7 @@ fn parse_mod(
             ".subcircuit" => {
                 let raw = args.next().ok_or(BlifParserError::MissingArgs)?;
                 let (name, instance_name) = if let Some((m, inst)) = raw.split_once('|') {
-                    (m.into(), Some(inst))
+                    (m, Some(inst))
                 } else {
                     (raw, None)
                 };
@@ -2157,7 +2153,7 @@ pub fn parse_blif(
 
             match cmd {
                 ".search" => {
-                    let path = args.next().ok_or(BlifParserError::MissingArgs)?.into();
+                    let path = args.next().ok_or(BlifParserError::MissingArgs)?;
 
                     if args.next().is_some() {
                         Err(BlifParserError::TooManyArgs)?

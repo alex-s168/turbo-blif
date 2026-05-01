@@ -77,25 +77,25 @@ fn write_model<W: fmt::Write>(model: &Model, w: &mut W, flavor: BlifFlavor) -> f
     writeln!(w, ".model {}", model.meta.name)?;
 
     // .inputs
-    if let Some(inputs) = &model.meta.inputs {
-        if !inputs.is_empty() {
-            write!(w, ".inputs")?;
-            for input in inputs {
-                write!(w, " {input}")?;
-            }
-            writeln!(w)?;
+    if let Some(inputs) = &model.meta.inputs
+        && !inputs.is_empty()
+    {
+        write!(w, ".inputs")?;
+        for input in inputs {
+            write!(w, " {input}")?;
         }
+        writeln!(w)?;
     }
 
     // .outputs
-    if let Some(outputs) = &model.meta.outputs {
-        if !outputs.is_empty() {
-            write!(w, ".outputs")?;
-            for output in outputs {
-                write!(w, " {output}")?;
-            }
-            writeln!(w)?;
+    if let Some(outputs) = &model.meta.outputs
+        && !outputs.is_empty()
+    {
+        write!(w, ".outputs")?;
+        for output in outputs {
+            write!(w, " {output}")?;
         }
+        writeln!(w)?;
     }
 
     // .clock

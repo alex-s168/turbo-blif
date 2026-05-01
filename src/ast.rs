@@ -8,9 +8,9 @@ pub struct LUT(pub Vec<(SmallVec<[Tristate; 8]>, Option<bool>)>);
 impl std::fmt::Display for LUT {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         for ent in self.0.iter() {
-            write!(
+            writeln!(
                 f,
-                "{} {}\n",
+                "{} {}",
                 ent.0.iter().fold(String::new(), |acc, x| {
                     let mut acc = acc;
                     acc.push_str(x.to_string().as_str());
@@ -387,8 +387,7 @@ pub fn parse_many_blif_to_ast<E: std::fmt::Debug, L: IntoIterator<Item = impl As
         to_search: vec![path.to_string()],
     };
 
-    while !blif.to_search.is_empty() {
-        let p = blif.to_search.pop().unwrap();
+    while let Some(p) = blif.to_search.pop() {
         let filnam = Path::new(p.as_str())
             .file_name()
             .ok_or(FullBlifErr::FileNoName)?;

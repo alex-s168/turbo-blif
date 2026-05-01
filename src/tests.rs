@@ -555,10 +555,7 @@ fn delay_cst__area() {
                 }),
                 attrs: vec![],
             }],
-            attr: ModelAttr {
-                area: Some(100.31),
-                ..Default::default()
-            }
+            attr: ModelAttr { area: Some(100.31) }
         })]
     );
 }
@@ -1203,13 +1200,11 @@ fn mvsis_example_c880() {
     let source = include_str!("../blif-examples-from-mvsis/C880.blif");
     let ast = parse_str_blif_to_ast("C880.blif", source).unwrap();
     assert_eq!(ast.entries.len(), 1);
-    let model = match &ast.entries[0] {
-        BlifEntry::Model(m) => m,
-    };
+    let BlifEntry::Model(model) = &ast.entries[0];
     assert_eq!(model.meta.name, "C880.iscas");
-    assert!(model.meta.inputs.as_ref().unwrap().len() > 0);
-    assert!(model.meta.outputs.as_ref().unwrap().len() > 0);
-    assert!(model.commands.len() > 0);
+    assert!(!model.meta.inputs.as_ref().unwrap().is_empty());
+    assert!(!model.meta.outputs.as_ref().unwrap().is_empty());
+    assert!(!model.commands.is_empty());
 }
 
 #[test]
@@ -1238,9 +1233,7 @@ fn mvsis_example_pj1() {
     let source = include_str!("../blif-examples-from-mvsis/pj1.blif");
     let ast = parse_str_blif_to_ast("pj1.blif", source).unwrap();
     assert_eq!(ast.entries.len(), 1);
-    let model = match &ast.entries[0] {
-        BlifEntry::Model(m) => m,
-    };
+    let BlifEntry::Model(model) = &ast.entries[0];
     assert_eq!(model.meta.name, "exCombCkt");
     assert!(model.commands.len() > 1000);
 }
@@ -1250,9 +1243,7 @@ fn mvsis_example_pj2() {
     let source = include_str!("../blif-examples-from-mvsis/pj2.blif");
     let ast = parse_str_blif_to_ast("pj2.blif", source).unwrap();
     assert_eq!(ast.entries.len(), 1);
-    let model = match &ast.entries[0] {
-        BlifEntry::Model(m) => m,
-    };
+    let BlifEntry::Model(model) = &ast.entries[0];
     assert_eq!(model.meta.name, "dcuCombCkt");
 }
 
@@ -1261,9 +1252,7 @@ fn mvsis_example_pj3() {
     let source = include_str!("../blif-examples-from-mvsis/pj3.blif");
     let ast = parse_str_blif_to_ast("pj3.blif", source).unwrap();
     assert_eq!(ast.entries.len(), 1);
-    let model = match &ast.entries[0] {
-        BlifEntry::Model(m) => m,
-    };
+    let BlifEntry::Model(model) = &ast.entries[0];
     assert_eq!(model.meta.name, "rcuCombCkt");
 }
 
@@ -1272,9 +1261,7 @@ fn mvsis_example_term1() {
     let source = include_str!("../blif-examples-from-mvsis/term1.blif");
     let ast = parse_str_blif_to_ast("term1.blif", source).unwrap();
     assert_eq!(ast.entries.len(), 1);
-    let model = match &ast.entries[0] {
-        BlifEntry::Model(m) => m,
-    };
+    let BlifEntry::Model(model) = &ast.entries[0];
     assert_eq!(model.meta.name, "term1");
     assert_eq!(model.meta.inputs.as_ref().unwrap().len(), 34);
     assert_eq!(model.meta.outputs.as_ref().unwrap().len(), 10);
