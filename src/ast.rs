@@ -109,6 +109,7 @@ pub enum ModelCmdKind {
     SubModel {
         name: Str<32>,
         map: Vec<(Str<16>, Str<16>)>,
+        instance_name: Option<Str<16>>,
     },
     Connect {
         from: Str<16>,
@@ -194,11 +195,17 @@ impl CommandConsumer for Model {
         self.commands.push(ModelCmdKind::LibFF(ff).into());
     }
 
-    fn sub_model(&mut self, model: &str, map: Vec<(Str<16>, Str<16>)>) {
+    fn sub_model(
+        &mut self,
+        model: &str,
+        map: Vec<(Str<16>, Str<16>)>,
+        instance_name: Option<&str>,
+    ) {
         self.commands.push(
             ModelCmdKind::SubModel {
                 name: model.into(),
                 map,
+                instance_name: instance_name.map(|s| s.into()),
             }
             .into(),
         );

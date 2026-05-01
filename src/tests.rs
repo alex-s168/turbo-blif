@@ -279,7 +279,8 @@ fn submod() {
                             ("x".into(), "x".into()),
                             ("y".into(), "y".into()),
                             ("j".into(), "j".into())
-                        ]
+                        ],
+                        instance_name: None
                     }
                     .into(),
                     ModelCmdKind::Gate(Gate {
@@ -1056,7 +1057,7 @@ fn table_directive() {
 
 #[test]
 fn subckt_with_instance_name() {
-    let _ast = parse_str_blif_to_ast(
+    let ast = parse_str_blif_to_ast(
         "top.blif",
         r#"
 .model top
@@ -1074,6 +1075,57 @@ fn subckt_with_instance_name() {
 "#,
     )
     .unwrap();
+
+    // Verify the instance name was stored
+    assert_eq!(
+        ast.entries,
+        vec![
+            BlifEntry::Model(Model {
+                meta: ModelMeta {
+                    name: "top".into(),
+                    inputs: Some(vec!["a".into(), "b".into()]),
+                    outputs: Some(vec!["z".into()]),
+                    clocks: vec![]
+                },
+                commands: vec![
+                    ModelCmdKind::SubModel {
+                        name: "adder".into(),
+                        map: vec![
+                            ("a".into(), "a".into()),
+                            ("b".into(), "b".into()),
+                            ("z".into(), "z".into())
+                        ],
+                        instance_name: Some("inst0".into())
+                    }
+                    .into(),
+                ],
+                attr: Default::default(),
+            }),
+            BlifEntry::Model(Model {
+                meta: ModelMeta {
+                    name: "adder".into(),
+                    inputs: Some(vec!["a".into(), "b".into()]),
+                    outputs: Some(vec!["z".into()]),
+                    clocks: vec![]
+                },
+                commands: vec![
+                    ModelCmdKind::Gate(Gate {
+                        meta: GateMeta {
+                            inputs: vec!["a".into(), "b".into()],
+                            output: "z".into(),
+                            external_dc: false
+                        },
+                        lut: LUT(vec![(
+                            [Tristate::True, Tristate::True].into_iter().collect(),
+                            Some(true)
+                        )])
+                    })
+                    .into(),
+                ],
+                attr: Default::default(),
+            }),
+        ]
+    );
 }
 
 #[test]
@@ -1226,4 +1278,86 @@ fn mvsis_example_term1() {
     assert_eq!(model.meta.name, "term1");
     assert_eq!(model.meta.inputs.as_ref().unwrap().len(), 34);
     assert_eq!(model.meta.outputs.as_ref().unwrap().len(), 10);
+}
+
+#[test]
+fn barbuf_alias_one_f() {
+    // .barbuf (single 'f') is an ABC alias for .barbuff / .conn
+    let ast = parse_str_blif_to_ast(
+        "test.blif",
+        r#"
+.model top
+.inputs a
+.outputs b
+.barbuf a b
+.end
+"#,
+    )
+    .unwrap();
+    assert_eq!(
+        ast.entries,
+        vec![BlifEntry::Model(Model {
+            meta: ModelMeta {
+                name: "top".into(),
+                inputs: Some(vec!["a".into()]),
+                outputs: Some(vec!["b".into()]),
+                clocks: vec![],
+            },
+            commands: vec![
+                ModelCmdKind::Connect {
+                    from: "a".into(),
+                    to: "b".into(),
+                }
+                .into()
+            ],
+            attr: Default::default(),
+        })]
+    );
+}
+
+#[test]
+fn delay_per_pair() {
+    // .delay <in-sig> <out-sig> <delay> — ABC per-pair extension
+    let ast = parse_str_blif_to_ast(
+        "test.blif",
+        r#"
+.model top
+.inputs a
+.outputs z
+.names a z
+1 1
+.delay a z 1.5
+.end
+"#,
+    )
+    .unwrap();
+    assert_eq!(
+        ast.entries,
+        vec![BlifEntry::Model(Model {
+            meta: ModelMeta {
+                name: "top".into(),
+                inputs: Some(vec!["a".into()]),
+                outputs: Some(vec!["z".into()]),
+                clocks: vec![],
+            },
+            commands: vec![
+                ModelCmdKind::Gate(Gate {
+                    meta: GateMeta {
+                        inputs: vec!["a".into()],
+                        output: "z".into(),
+                        external_dc: false,
+                    },
+                    lut: LUT(vec![([Tristate::True].into_iter().collect(), Some(true))]),
+                })
+                .into(),
+                ModelCmdKind::DelayConstraint(ModelDelayConstraint::DelayPerPair {
+                    in_sig: "a".into(),
+                    out_sig: "z".into(),
+                    delay: 1.5,
+                })
+                .into(),
+            ],
+            attr: Default::default(),
+        })]
+    );
 }

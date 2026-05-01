@@ -224,7 +224,10 @@ pub trait CommandConsumer {
     ///
     /// Copies the whole circuit of the referenced model and maps the
     /// inputs / outputs / clocks according to `map`.
-    fn sub_model(&mut self, model: &str, map: Vec<(Str<16>, Str<16>)>);
+    ///
+    /// `instance_name` is an optional instance name from the
+    /// `model|instance` BLIF-MV syntax.
+    fn sub_model(&mut self, model: &str, map: Vec<(Str<16>, Str<16>)>, instance_name: Option<&str>);
 
     /// Attach a cell attribute (`.cname`, `.attr`, or `.param`) to the most
     /// recently declared gate / FSM / flip-flop / library gate / sub-circuit.
@@ -752,6 +755,16 @@ pub enum ModelDelayConstraint {
     InputRequired(SignalLoad),
     /// Per-output arrival time (`.output_arrival`).
     OutputArrival(SignalLoad),
+    /// Per-input-to-output delay (`.delay <in-sig> <out-sig> <delay>`).
+    /// ABC extension.
+    DelayPerPair {
+        /// Input signal name.
+        in_sig: Str<0>,
+        /// Output signal name.
+        out_sig: Str<0>,
+        /// Delay value.
+        delay: f32,
+    },
 }
 
 /// Tokenise a BLIF line into space-separated tokens, preserving parenthesised
@@ -1059,7 +1072,12 @@ fn parse_mod(
             }
 
             ".subckt" => {
-                let name = args.next().ok_or(BlifParserError::MissingArgs)?.into();
+                let raw = args.next().ok_or(BlifParserError::MissingArgs)?;
+                let (name, instance_name) = if let Some((m, inst)) = raw.split_once('|') {
+                    (m.into(), Some(inst))
+                } else {
+                    (raw, None)
+                };
                 let maps = args
                     .map(|x| {
                         x.split_once('=')
@@ -1068,7 +1086,7 @@ fn parse_mod(
                     })
                     .collect::<Result<_, _>>()?;
 
-                consumer.sub_model(name, maps);
+                consumer.sub_model(name, maps, instance_name);
             }
 
             ".search" => {
@@ -1333,7 +1351,7 @@ fn parse_mod(
                 });
             }
 
-            ".barbuff" | ".conn" => {
+            ".barbuff" | ".barbuf" | ".conn" => {
                 let from = args.next().ok_or(BlifParserError::MissingArgs)?.into();
                 let to = args.next().ok_or(BlifParserError::MissingArgs)?.into();
 
@@ -1450,7 +1468,17 @@ fn parse_mod(
                         && args.clone().next().is_none()
                     {
                         // .delay <in-sig> <out-sig> <delay>  (per-pair) — ABC extension
-                        // Currently ignored as no dedicated AST variant exists.
+                        let in_sig: Str<0> = arg0.into();
+                        let out_sig: Str<0> = arg1.unwrap().into();
+                        let delay = arg2
+                            .unwrap()
+                            .parse()
+                            .map_err(|_| BlifParserError::Invalid)?;
+                        consumer.model_delay_constraint(ModelDelayConstraint::DelayPerPair {
+                            in_sig,
+                            out_sig,
+                            delay,
+                        });
                     } else {
                         // .delay <in-name> <phase> <load> <max-load> <brise> <drise> <bfall> <dfall>  (original BLIF)
                         let input: Str<0> = arg0.into();
@@ -1938,7 +1966,12 @@ fn parse_mod(
 
             // ABC alias: .subcircuit (same as .subckt)
             ".subcircuit" => {
-                let name = args.next().ok_or(BlifParserError::MissingArgs)?.into();
+                let raw = args.next().ok_or(BlifParserError::MissingArgs)?;
+                let (name, instance_name) = if let Some((m, inst)) = raw.split_once('|') {
+                    (m.into(), Some(inst))
+                } else {
+                    (raw, None)
+                };
                 let maps = args
                     .map(|x| {
                         x.split_once('=')
@@ -1946,7 +1979,7 @@ fn parse_mod(
                             .map(|(k, v)| (k.into(), v.into()))
                     })
                     .collect::<Result<_, _>>()?;
-                consumer.sub_model(name, maps);
+                consumer.sub_model(name, maps, instance_name);
             }
 
             // BLIF-MV: .table <in1> <in2> ... -> <out1> <out2> ...
