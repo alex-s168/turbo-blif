@@ -117,25 +117,25 @@ pub enum ModelCmdKind {
     CycleTime(f32),
     ClockEvents(ClockEvents),
     DelayConstraint(ModelDelayConstraint),
-    /// BLIF-MV: .constraint <signal> ...
+    /// BLIF-MV: `.constraint <signal>` (`signal` can appear multiple times)
     Constraint(Vec<Str<16>>),
-    /// BLIF-MV: .onehot <signal> ...
+    /// BLIF-MV: `.onehot <signal>` (`signal` can appear multiple times)
     OneHot(Vec<Str<16>>),
-    /// BLIF-MV: .reset <signal> \n <value>
+    /// BLIF-MV: `.reset <signal> \n <value>`
     Reset {
         signal: Str<16>,
         value: SmallVec<[Tristate; 8]>,
     },
-    /// BLIF-MV: .ltlformula "<LTL string>"
+    /// BLIF-MV: `.ltlformula "<LTL string>"`
     LtlFormula(String),
-    /// BLIF-MV: .spec <file-name>
+    /// BLIF-MV: `.spec <file-name>`
     Spec(String),
-    /// BLIF-MV / Yosys: .gateinit <signal>=<init-val>
+    /// BLIF-MV / Yosys: `.gateinit <signal>=<init-val>`
     GateInit {
         signal: Str<16>,
         value: FlipFlopInit,
     },
-    /// BLIF-MV: .mv <var> ... <nvalues> [<val-name> ...]
+    /// BLIF-MV: `.mv <var> ... <nvalues> [<val-name> ...]`
     Mv {
         variables: Vec<Str<16>>,
         nvalues: usize,
@@ -318,9 +318,27 @@ pub enum FullBlifErr<E: std::fmt::Debug> {
     Blif(BlifParserError),
     File(E),
     FileNoName,
-    /// only caused when parsing single blif file
+    /// Only caused when parsing a single BLIF file and a `.search` directive is encountered.
     SearchPathsNotSupported,
 }
+
+impl<E: std::fmt::Debug + std::fmt::Display> std::fmt::Display for FullBlifErr<E> {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            FullBlifErr::Blif(e) => write!(f, "BLIF parse error: {e}"),
+            FullBlifErr::File(e) => write!(f, "I/O error: {e}"),
+            FullBlifErr::FileNoName => write!(f, "file path has no file name"),
+            FullBlifErr::SearchPathsNotSupported => {
+                write!(
+                    f,
+                    ".search directives are not supported when parsing a single BLIF file"
+                )
+            }
+        }
+    }
+}
+
+impl<E: std::fmt::Debug + std::fmt::Display> std::error::Error for FullBlifErr<E> {}
 
 #[derive(Debug, PartialEq)]
 pub enum BlifEntry {
