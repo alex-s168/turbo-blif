@@ -3,7 +3,7 @@ use std::path::Path;
 use super::*;
 
 #[derive(Clone, Hash, PartialEq, PartialOrd)]
-pub struct LUT(pub Vec<(SmallVec<[Tristate; 8]>, bool)>);
+pub struct LUT(pub Vec<(SmallVec<[Tristate; 8]>, Option<bool>)>);
 
 impl std::fmt::Display for LUT {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
@@ -16,7 +16,11 @@ impl std::fmt::Display for LUT {
                     acc.push_str(x.to_string().as_str());
                     acc
                 }),
-                if ent.1 { "1" } else { "0" }
+                match ent.1 {
+                    Some(true) => "1",
+                    Some(false) => "0",
+                    None => "-",
+                }
             )?;
         }
         Ok(())
@@ -45,7 +49,7 @@ impl From<GateMeta> for Gate {
 }
 
 impl GateLutConsumer for Gate {
-    fn entry(&mut self, ins: SmallVec<[Tristate; 8]>, out: bool) {
+    fn entry(&mut self, ins: SmallVec<[Tristate; 8]>, out: Option<bool>) {
         self.lut.0.push((ins, out));
     }
 }
@@ -113,6 +117,30 @@ pub enum ModelCmdKind {
     CycleTime(f32),
     ClockEvents(ClockEvents),
     DelayConstraint(ModelDelayConstraint),
+    /// BLIF-MV: .constraint <signal> ...
+    Constraint(Vec<Str<16>>),
+    /// BLIF-MV: .onehot <signal> ...
+    OneHot(Vec<Str<16>>),
+    /// BLIF-MV: .reset <signal> \n <value>
+    Reset {
+        signal: Str<16>,
+        value: SmallVec<[Tristate; 8]>,
+    },
+    /// BLIF-MV: .ltlformula "<LTL string>"
+    LtlFormula(String),
+    /// BLIF-MV: .spec <file-name>
+    Spec(String),
+    /// BLIF-MV / Yosys: .gateinit <signal>=<init-val>
+    GateInit {
+        signal: Str<16>,
+        value: FlipFlopInit,
+    },
+    /// BLIF-MV: .mv <var> ... <nvalues> [<val-name> ...]
+    Mv {
+        variables: Vec<Str<16>>,
+        nvalues: usize,
+        value_names: Vec<String>,
+    },
 }
 
 #[derive(Debug, Clone, PartialEq, PartialOrd)]
@@ -241,6 +269,47 @@ impl CommandConsumer for Model {
     fn model_delay_constraint(&mut self, constraint: ModelDelayConstraint) {
         self.commands
             .push(ModelCmdKind::DelayConstraint(constraint).into())
+    }
+
+    fn constraint(&mut self, signals: &[Str<16>]) {
+        self.commands
+            .push(ModelCmdKind::Constraint(signals.to_vec()).into());
+    }
+
+    fn onehot(&mut self, signals: &[Str<16>]) {
+        self.commands
+            .push(ModelCmdKind::OneHot(signals.to_vec()).into());
+    }
+
+    fn reset(&mut self, signal: Str<16>, value: SmallVec<[Tristate; 8]>) {
+        self.commands
+            .push(ModelCmdKind::Reset { signal, value }.into());
+    }
+
+    fn ltlformula(&mut self, formula: &str) {
+        self.commands
+            .push(ModelCmdKind::LtlFormula(formula.to_string()).into());
+    }
+
+    fn spec(&mut self, filename: &str) {
+        self.commands
+            .push(ModelCmdKind::Spec(filename.to_string()).into());
+    }
+
+    fn gateinit(&mut self, signal: Str<16>, value: FlipFlopInit) {
+        self.commands
+            .push(ModelCmdKind::GateInit { signal, value }.into());
+    }
+
+    fn mv(&mut self, variables: Vec<Str<16>>, nvalues: usize, value_names: Vec<String>) {
+        self.commands.push(
+            ModelCmdKind::Mv {
+                variables,
+                nvalues,
+                value_names,
+            }
+            .into(),
+        );
     }
 }
 

@@ -38,7 +38,7 @@ fn simple_named() {
                     },
                     lut: LUT(vec![(
                         [Tristate::True, Tristate::True].into_iter().collect(),
-                        true
+                        Some(true)
                     )]),
                 })
                 .into()
@@ -78,7 +78,7 @@ fn simple_unnamed() {
                     },
                     lut: LUT(vec![(
                         [Tristate::True, Tristate::True].into_iter().collect(),
-                        true
+                        Some(true)
                     )]),
                 })
                 .into()
@@ -117,7 +117,7 @@ c
                     },
                     lut: LUT(vec![(
                         [Tristate::True, Tristate::True].into_iter().collect(),
-                        true
+                        Some(true)
                     )]),
                 })
                 .into()
@@ -157,7 +157,7 @@ c
                     },
                     lut: LUT(vec![(
                         [Tristate::True, Tristate::True].into_iter().collect(),
-                        true
+                        Some(true)
                     )]),
                 })
                 .into()
@@ -205,7 +205,7 @@ fn lut() {
                             ]
                             .into_iter()
                             .collect(),
-                            true
+                            Some(true)
                         ),
                         (
                             [
@@ -216,7 +216,7 @@ fn lut() {
                             ]
                             .into_iter()
                             .collect(),
-                            true
+                            Some(true)
                         ),
                         (
                             [
@@ -227,7 +227,7 @@ fn lut() {
                             ]
                             .into_iter()
                             .collect(),
-                            true
+                            Some(true)
                         )
                     ]),
                 })
@@ -288,7 +288,7 @@ fn submod() {
                             output: "j".into(),
                             external_dc: true
                         },
-                        lut: LUT(vec![([Tristate::True].into_iter().collect(), true)])
+                        lut: LUT(vec![([Tristate::True].into_iter().collect(), Some(true))])
                     })
                     .into()
                 ],
@@ -310,7 +310,7 @@ fn submod() {
                         },
                         lut: LUT(vec![(
                             [Tristate::True, Tristate::True].into_iter().collect(),
-                            true
+                            Some(true)
                         )])
                     })
                     .into()
@@ -550,7 +550,7 @@ fn delay_cst__area() {
                         output: "$true".into(),
                         external_dc: false,
                     },
-                    lut: LUT(vec![([].into_iter().collect(), true)])
+                    lut: LUT(vec![([].into_iter().collect(), Some(true))])
                 }),
                 attrs: vec![],
             }],

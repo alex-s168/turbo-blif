@@ -16,7 +16,8 @@ pub struct GateMeta {
 /// truth table consumer
 pub trait GateLutConsumer {
     /// according to the spec, out is only ever binary
-    fn entry(&mut self, ins: SmallVec<[Tristate; 8]>, out: bool);
+    /// None means don't care (x or n in the output column)
+    fn entry(&mut self, ins: SmallVec<[Tristate; 8]>, out: Option<bool>);
 }
 
 #[derive(Debug, Clone, Hash, PartialEq, PartialOrd)]
@@ -112,6 +113,35 @@ pub trait CommandConsumer {
 
     fn set_cycle_time(&mut self, cycle_time: f32);
     fn clock_events(&mut self, events: ClockEvents);
+
+    /// BLIF-MV: .constraint <signal> ...
+    fn constraint(&mut self, signals: &[Str<16>]) {
+        let _ = signals;
+    }
+    /// BLIF-MV: .onehot <signal> ...
+    fn onehot(&mut self, signals: &[Str<16>]) {
+        let _ = signals;
+    }
+    /// BLIF-MV: .reset <signal> <value>
+    fn reset(&mut self, signal: Str<16>, value: SmallVec<[Tristate; 8]>) {
+        let _ = (signal, value);
+    }
+    /// BLIF-MV: .ltlformula "<LTL string>"
+    fn ltlformula(&mut self, formula: &str) {
+        let _ = formula;
+    }
+    /// BLIF-MV: .spec <file-name>
+    fn spec(&mut self, filename: &str) {
+        let _ = filename;
+    }
+    /// BLIF-MV / Yosys: .gateinit <signal>=<init-val>
+    fn gateinit(&mut self, signal: Str<16>, value: FlipFlopInit) {
+        let _ = (signal, value);
+    }
+    /// BLIF-MV: .mv <var> ... <nvalues> [<val-name> ...]
+    fn mv(&mut self, variables: Vec<Str<16>>, nvalues: usize, value_names: Vec<String>) {
+        let _ = (variables, nvalues, value_names);
+    }
 }
 
 #[derive(Debug, Clone, Hash, PartialEq, PartialOrd)]
@@ -526,6 +556,12 @@ fn parse_mod(
     consumer: &mut impl ModelConsumer,
     lines: &mut Peekable<impl Iterator<Item = impl AsRef<str>>>,
 ) -> Result<(), BlifParserError> {
+    // BLIF-MV: .spec <file-name> — appears immediately after .model
+    parse_padding(lines);
+    if is_kw(lines, ".spec") {
+        let _line = next_stmt(lines)?.unwrap();
+    }
+
     let inputs = {
         parse_padding(lines);
         if is_kw(lines, ".inputs") || is_kw(lines, ".input") {
@@ -622,8 +658,9 @@ fn parse_mod(
 
                     let invs = str_to_tristates(l).map_err(|_| BlifParserError::Invalid)?;
                     let outvs = match r {
-                        "0" => false,
-                        "1" => true,
+                        "0" => Some(false),
+                        "1" => Some(true),
+                        "x" | "n" => None,
                         _ => Err(BlifParserError::Invalid)?,
                     };
 
@@ -678,9 +715,8 @@ fn parse_mod(
                     };
                 }
 
-                if args.next().is_some() {
-                    Err(BlifParserError::TooManyArgs)?
-                }
+                // consume optional register class (ABC extension) - silently ignore
+                let _ = args.next();
 
                 consumer.ff(FlipFlop {
                     ty,
@@ -1473,6 +1509,296 @@ fn parse_mod(
                 if args.next().is_some() {
                     Err(BlifParserError::TooManyArgs)?
                 }
+            }
+
+            // BLIF-MV: .short <in> <out> — buffer (equivalent to .conn)
+            ".short" => {
+                let from = args.next().ok_or(BlifParserError::MissingArgs)?.into();
+                let to = args.next().ok_or(BlifParserError::MissingArgs)?.into();
+                if args.next().is_some() {
+                    Err(BlifParserError::TooManyArgs)?
+                }
+                consumer.connect(from, to);
+            }
+
+            // BLIF-MV: .constraint <signal> ...
+            ".constraint" => {
+                let signals: Vec<_> = args.map(|x| x.into()).collect();
+                consumer.constraint(&signals);
+            }
+
+            // BLIF-MV: .onehot <signal> ...
+            ".onehot" => {
+                let signals: Vec<_> = args.map(|x| x.into()).collect();
+                consumer.onehot(&signals);
+            }
+
+            // BLIF-MV: .reset <signal> \n <value>
+            ".reset" => {
+                let signal = args.next().ok_or(BlifParserError::MissingArgs)?.into();
+                parse_padding(lines);
+                let line = next_stmt(lines)?.ok_or(BlifParserError::UnexpectedEnd)?;
+                let value =
+                    str_to_tristates(line.as_ref().trim()).map_err(|_| BlifParserError::Invalid)?;
+                consumer.reset(signal, value);
+            }
+
+            // BLIF-MV: .ltlformula "<LTL string>"
+            ".ltlformula" => {
+                // the formula may contain spaces, so use the rest of the line
+                let formula = args.fold(String::new(), |acc, x| {
+                    let mut acc = acc;
+                    if !acc.is_empty() {
+                        acc.push(' ');
+                    }
+                    acc.push_str(x);
+                    acc
+                });
+                consumer.ltlformula(&formula);
+            }
+
+            // BLIF-MV: .spec <file-name>
+            ".spec" => {
+                let filename = args.next().ok_or(BlifParserError::MissingArgs)?.into();
+                if args.next().is_some() {
+                    Err(BlifParserError::TooManyArgs)?
+                }
+                consumer.spec(filename);
+            }
+
+            // BLIF-MV / Yosys: .gateinit <signal>=<init-val>
+            ".gateinit" => {
+                let arg = args.next().ok_or(BlifParserError::MissingArgs)?;
+                let (signal, val) = arg.split_once('=').ok_or(BlifParserError::Invalid)?;
+                let value = match val {
+                    "0" => FlipFlopInit::Const(false),
+                    "1" => FlipFlopInit::Const(true),
+                    "2" => FlipFlopInit::DontCare,
+                    "3" => FlipFlopInit::Unknown,
+                    _ => Err(BlifParserError::Invalid)?,
+                };
+                if args.next().is_some() {
+                    Err(BlifParserError::TooManyArgs)?
+                }
+                consumer.gateinit(signal.into(), value);
+            }
+
+            // BLIF-MV: .mv <var> ... <nvalues> [<val-name> ...]
+            ".mv" => {
+                // re-tokenize the line for simpler parsing
+                let all_args: Vec<_> = tokenize(line).into_iter().collect();
+                // skip ".mv"
+                let iter = all_args.into_iter().skip(1);
+                let mut variables = vec![];
+                let mut nvalues: Option<usize> = None;
+                let mut value_names = vec![];
+
+                // collect variables (non-numeric tokens), then nvalues (first numeric), then value names
+                for a in iter {
+                    if nvalues.is_some() {
+                        value_names.push(a.to_string());
+                    } else if let Ok(n) = a.parse::<usize>() {
+                        nvalues = Some(n);
+                    } else {
+                        variables.push(a.into());
+                    }
+                }
+
+                let nvalues = nvalues.ok_or(BlifParserError::MissingArgs)?;
+                consumer.mv(variables, nvalues, value_names);
+            }
+
+            // ABC Extended BLIF: .flop D=<in> Q=<out> C=<clk> [S=<set>] [R=<reset>] [E=<enable>] [async] [negedge] [init=<val>]
+            ".flop" => {
+                let mut input: Option<&str> = None;
+                let mut output: Option<&str> = None;
+                let mut clock: Option<Str<16>> = None;
+                let mut init_val = FlipFlopInit::Unknown;
+                let mut ty: Option<FlipFlopType> = None;
+
+                for arg in args {
+                    if let Some(val) = arg.strip_prefix("D=") {
+                        input = Some(val);
+                    } else if let Some(val) = arg.strip_prefix("Q=") {
+                        output = Some(val);
+                    } else if let Some(val) = arg.strip_prefix("C=") {
+                        clock = Some(val.into());
+                    } else if arg == "async" {
+                        ty = Some(FlipFlopType::Asynchronous);
+                    } else if arg == "negedge" {
+                        ty = Some(FlipFlopType::FallingEdge);
+                    } else if let Some(val) = arg.strip_prefix("init=") {
+                        init_val = match val {
+                            "0" => FlipFlopInit::Const(false),
+                            "1" => FlipFlopInit::Const(true),
+                            "2" => FlipFlopInit::DontCare,
+                            "3" => FlipFlopInit::Unknown,
+                            _ => Err(BlifParserError::Invalid)?,
+                        };
+                    } else if let Some(_val) = arg.strip_prefix("S=") {
+                        // set pin — not currently represented in FlipFlop, silently ignore
+                    } else if let Some(_val) = arg.strip_prefix("R=") {
+                        // reset pin — not currently represented in FlipFlop, silently ignore
+                    } else if let Some(_val) = arg.strip_prefix("E=") {
+                        // enable pin — not currently represented in FlipFlop, silently ignore
+                    }
+                }
+
+                let input = input.ok_or(BlifParserError::MissingArgs)?;
+                let output = output.ok_or(BlifParserError::MissingArgs)?;
+                // negedge implies FallingEdge if no other type specified
+                // if ty is None and negedge was specified, it's already set to FallingEdge
+
+                consumer.ff(FlipFlop {
+                    ty,
+                    input: input.into(),
+                    output: output.into(),
+                    clock,
+                    init: init_val,
+                });
+            }
+
+            // ABC alias: .subcircuit (same as .subckt)
+            ".subcircuit" => {
+                let name = args.next().ok_or(BlifParserError::MissingArgs)?.into();
+                let maps = args
+                    .map(|x| {
+                        x.split_once('=')
+                            .ok_or(BlifParserError::Invalid)
+                            .map(|(k, v)| (k.into(), v.into()))
+                    })
+                    .collect::<Result<_, _>>()?;
+                consumer.sub_model(name, maps);
+            }
+
+            // BLIF-MV: .table <in1> <in2> ... -> <out1> <out2> ...
+            // handles the multi-valued table, similar to .names but with -> separator
+            ".table" => {
+                // collect args until '->', then outputs after
+                let mut inputs: Vec<Str<16>> = vec![];
+                let mut outputs: Vec<Str<16>> = vec![];
+                let mut seen_arrow = false;
+                for arg in args {
+                    if arg == "->" {
+                        seen_arrow = true;
+                    } else if !seen_arrow {
+                        inputs.push(arg.into());
+                    } else {
+                        outputs.push(arg.into());
+                    }
+                }
+
+                if !seen_arrow || outputs.is_empty() {
+                    Err(BlifParserError::Invalid)?
+                }
+
+                // For now, handle single-output tables like .names
+                if outputs.len() == 1 {
+                    let output = outputs.pop().unwrap();
+                    let mut gate = consumer.gate(GateMeta {
+                        inputs,
+                        output,
+                        external_dc: extdc,
+                    });
+
+                    while {
+                        parse_padding(lines);
+                        lines.peek().is_some_and(|x| !x.as_ref().starts_with("."))
+                    } {
+                        let l = next_stmt(lines)?.unwrap();
+                        let l = l.as_ref();
+
+                        let (l, r) = if l.contains(' ') {
+                            l.split_once(' ').unwrap()
+                        } else {
+                            ("", l)
+                        };
+
+                        let invs = str_to_tristates(l).map_err(|_| BlifParserError::Invalid)?;
+                        let outvs = match r {
+                            "0" => Some(false),
+                            "1" => Some(true),
+                            "x" | "n" => None,
+                            _ => Err(BlifParserError::Invalid)?,
+                        };
+
+                        gate.entry(invs, outvs);
+                    }
+
+                    consumer.gate_done(gate);
+                } else {
+                    // multi-output table — not fully supported, skip table lines
+                    while {
+                        parse_padding(lines);
+                        lines.peek().is_some_and(|x| !x.as_ref().starts_with("."))
+                    } {
+                        let _l = next_stmt(lines)?.unwrap();
+                    }
+                }
+            }
+
+            // SIS: .cover <nin> <nout> <nterms> — alternative to .names
+            ".cover" => {
+                let _nin = args
+                    .next()
+                    .ok_or(BlifParserError::MissingArgs)?
+                    .parse::<usize>()
+                    .map_err(|_| BlifParserError::Invalid)?;
+                let nout = args
+                    .next()
+                    .ok_or(BlifParserError::MissingArgs)?
+                    .parse::<usize>()
+                    .map_err(|_| BlifParserError::Invalid)?;
+                if nout != 1 {
+                    Err(BlifParserError::Invalid)?
+                }
+                let _nterms = args
+                    .next()
+                    .ok_or(BlifParserError::MissingArgs)?
+                    .parse::<usize>()
+                    .map_err(|_| BlifParserError::Invalid)?;
+
+                // next line: <input-list> <output>
+                parse_padding(lines);
+                let header_line = next_stmt(lines)?.ok_or(BlifParserError::UnexpectedEnd)?;
+                let mut header_args = tokenize(header_line.as_ref()).into_iter();
+                let output = header_args
+                    .next_back()
+                    .ok_or(BlifParserError::MissingArgs)?
+                    .into();
+                let inputs: Vec<_> = header_args.map(|x| x.into()).collect();
+
+                let mut gate = consumer.gate(GateMeta {
+                    inputs,
+                    output,
+                    external_dc: extdc,
+                });
+
+                while {
+                    parse_padding(lines);
+                    lines.peek().is_some_and(|x| !x.as_ref().starts_with("."))
+                } {
+                    let l = next_stmt(lines)?.unwrap();
+                    let l = l.as_ref();
+
+                    let (l, r) = if l.contains(' ') {
+                        l.split_once(' ').unwrap()
+                    } else {
+                        ("", l)
+                    };
+
+                    let invs = str_to_tristates(l).map_err(|_| BlifParserError::Invalid)?;
+                    let outvs = match r {
+                        "0" => Some(false),
+                        "1" => Some(true),
+                        "x" | "n" => None,
+                        _ => Err(BlifParserError::Invalid)?,
+                    };
+
+                    gate.entry(invs, outvs);
+                }
+
+                consumer.gate_done(gate);
             }
 
             _ => Err(BlifParserError::UnknownKw(cmd.to_string()))?,
